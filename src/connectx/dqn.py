@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from collections import namedtuple
 from itertools import count
 
+import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
@@ -11,8 +12,73 @@ import torch.nn.functional as F
 from src.connectx.environment import ConnectXGymEnv, convert_state_to_image
 from src.connectx.policy import CNNPolicy
 
-Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
+
+
+def countplot(plot_id: int,
+              data: list,
+              labels: list,
+              title: str) -> None:
+    """
+    Create a bar plot.
+
+    :param plot_id: plot id
+    :param data: the list containing the values
+    :param labels: the list containing the labels
+    :param title: the title of the bar plot
+    """
+
+    plt.figure(plot_id)
+    plt.clf()
+    data_torch = torch.tensor(data, dtype=torch.float)
+    plt.title(title)
+    plt.bar(labels, data_torch.numpy())
+
+    # Pause a bit so that plots are updated
+    plt.pause(0.001)
+
+
+def lineplot(plot_id: int,
+             data: list,
+             title: str,
+             xlabel: str,
+             ylabel: str,
+             points: list = (),
+             points_style: list = (),
+             hline: float = None) -> None:
+    """
+    Plot the data of the last episodes.
+
+    :param plot_id: plot id
+    :param data: list to plot
+    :param title: title of the plot
+    :param xlabel: title of the x-axis
+    :param ylabel: title of the y-axis
+    :param points: list of lists of positions where to draw points on the line
+    :param points_style: list of dicts representing the style of each list of positions
+    :param hline: vertical coordinate where to draw a line
+    """
+
+    plt.figure(plot_id)
+    plt.clf()
+    data_torch = torch.tensor(data, dtype=torch.float)
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.plot(data_torch.numpy())
+    for i, p in enumerate(points):
+        plt.scatter(p, data_torch[p], **points_style[i])
+    if hline is not None:
+        plt.axhline(hline, color='red', linestyle='dashed')
+
+    # Pause a bit so that plots are updated
+    plt.pause(0.001)
+
+    """
+    if is_ipython:
+        display.clear_output(wait=True)
+        display.display(plt.gcf())
+    """
 
 
 class ReplayMemory(object):
@@ -110,8 +176,6 @@ class DQN(object):
         # Metrics
         # Steps done is used for action selection and computation of eps threshold
         self.steps_done = 0
-        # Keep track of the episodes' durations
-        self.episode_durations = []
 
     def optimize_model(self):
         """
@@ -164,17 +228,32 @@ class DQN(object):
         self.optimizer.step()
 
     def training_loop(self, num_episodes: int = 50,
+                      save_path: str = None,
                       render_env: bool = False,
                       render_waiting_time: float = 1,
-                      plot_duration: bool = True):
+                      plot_duration: bool = True,
+                      plot_mean_reward: bool = True,
+                      plot_actions_count: bool = True):
         """
         The DQN training algorithm.
 
         :param num_episodes: the number of episodes to train
+        :param save_path: path where the model is saved at the end
         :param render_env: If true render the game board at each step
         :param render_waiting_time: paused time between a step and another
         :param plot_duration: if True plot the duration of each episode at the end
+        :param plot_mean_reward: if True tracks and plots the average reward at each episode
+        :param plot_actions_count: if True plots a bar plot representing the counter of actions taken
         """
+        # Keep track of rewards
+        episodes_rewards = []
+        # Keep track of victories and losses
+        episodes_victories = []
+        episodes_losts = []
+        # Keep track of the episodes' durations
+        episode_durations = []
+        # Keep track of actions taken
+        action_counts = {i: 0 for i in range(1, self.n_actions + 1)}
 
         for i_episode in range(num_episodes):
             # Initialize the environment and state
@@ -182,16 +261,26 @@ class DQN(object):
             # Get image and convert to torch tensor
             screen = torch.from_numpy(convert_state_to_image(state))
 
+            step_rewards = []
+
             for t in count():
                 # Select and perform an action on the environment
                 action = self.select_action(screen)
-                new_state, reward, done, _ = self.env.step(action.item())
+                new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
                 new_screen = torch.from_numpy(convert_state_to_image(new_state))
+
+                # Metrics
+                step_rewards.append(reward.detach().item())
+                action_counts[action.detach().item() + 1] += 1
 
                 if done:
                     new_state = None
                     new_screen = None
+                    if info['end_status'] == 'victory':
+                        episodes_victories.append(i_episode)
+                    elif info['end_status'] == 'lost':
+                        episodes_losts.append(i_episode)
 
                 # Store the transition in memory
                 self.memory.push(screen, action, new_screen, reward)
@@ -208,15 +297,30 @@ class DQN(object):
                     self.env.render(mode='rgb_image', render_waiting_time=render_waiting_time)
 
                 if done:
-                    self.episode_durations.append(t + 1)
+                    episode_durations.append(t + 1)
+                    episodes_rewards.append(np.mean(step_rewards))
                     if plot_duration:
-                        self.plot_durations()
+                        lineplot(0, episode_durations, 'Episodes durations', 'Episodes', 'Durations')
+                    if plot_mean_reward:
+                        lineplot(1,
+                                 episodes_rewards,
+                                 'Episode average rewards',
+                                 f'Episodes (Victories: {len(episodes_victories)} / {i_episode + 1})',
+                                 'Rewards',
+                                 points=[episodes_victories, episodes_losts],
+                                 points_style=[{'c': 'green', 'marker': '*'}, {'c': 'red', 'marker': '.'}],
+                                 hline=0.0)
+                    if plot_actions_count:
+                        countplot(2, list(action_counts.values()), list(action_counts.keys()), 'Actions taken')
                     break
 
             # Update the target network, copying all weights and biases in DQN
             if i_episode % self.target_update == 0:
                 self.target_net.load_state_dict(self.policy_net.state_dict())
 
+        if save_path:
+            print(f'Model saved at {save_path}')
+            torch.save(self.policy_net.state_dict(), save_path)
         print('Training complete')
 
     def select_action(self, state) -> torch.Tensor:
@@ -229,7 +333,7 @@ class DQN(object):
         sample = random.random()
         # Push the agent to exploit after many steps rather than explore
         eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * \
-            math.exp(-1. * self.steps_done / self.eps_decay)
+                        math.exp(-1. * self.steps_done / self.eps_decay)
 
         self.steps_done += 1
 
@@ -244,30 +348,8 @@ class DQN(object):
             # Exploration
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
 
-    def plot_durations(self):
-        """
-        Plot the durations of the last episodes.
-        """
-
-        plt.figure(2)
-        plt.clf()
-        durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
-        plt.title('Training...')
-        plt.xlabel('Episode')
-        plt.ylabel('Duration')
-        plt.plot(durations_t.numpy())
-
-        # Pause a bit so that plots are updated
-        plt.pause(0.001)
-
-        """
-        if is_ipython:
-            display.clear_output(wait=True)
-            display.display(plt.gcf())
-        """
-
 
 env = ConnectXGymEnv('random', True)
 dqn = DQN(env)
 
-dqn.training_loop(1000)
+dqn.training_loop(10000, save_path='./')

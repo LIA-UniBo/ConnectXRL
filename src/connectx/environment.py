@@ -89,9 +89,9 @@ class ConnectXGymEnv(gym.Env):
             return VICTORY_REWARD
         elif done:
             # The opponent has won the game
-            return -LOST_REWARD
+            return LOST_REWARD
         else:
-            return 1 / (self.rows * self.columns)
+            return -1 / (self.rows * self.columns)
 
     def step(self, action: int) -> tuple[np.ndarray, float, Union[bool, Any], Union[dict, Any]]:
         """
@@ -100,16 +100,23 @@ class ConnectXGymEnv(gym.Env):
         :return: the new observation (matrix), reward, flag for episode ending and info dictionary
         """
 
+        end_status = None
+
         # Check if the action is valid otherwise punish the agent
         if self.obs['board'][int(action)] == 0:
             # Perform the action
             self.obs, original_reward, done, _ = self.env.step(int(action))
             # Modify the reward
             reward = self.reward_shaping(original_reward, done)
+            # Set victory status
+            if original_reward == 1:
+                end_status = 'victory'
+            elif done:
+                end_status = 'lost'
         else:
-            reward, done, _ = INVALID_REWARD, True, {}
+            reward, done, end_status = INVALID_REWARD, True, 'invalid'
         # The observed board is returned as a matrix even if internally is used as an array
-        return np.array(self.obs['board']).reshape(self.rows, self.columns, 1), reward, done, _
+        return np.array(self.obs['board']).reshape(self.rows, self.columns, 1), reward, done, {'end_status': end_status}
 
     def render(self, **kwargs):
         """
