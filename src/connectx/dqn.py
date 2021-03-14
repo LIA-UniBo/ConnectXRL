@@ -5,6 +5,7 @@ from collections import namedtuple
 from itertools import count
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
@@ -131,18 +132,24 @@ class DQN(object):
                  gamma: float = 0.999,
                  eps_start: float = 0.9,
                  eps_end: float = 0.05,
-                 eps_deacy: float = 200,
+                 eps_decay: float = 200,
+                 memory_size: int = 10000,
                  target_update: int = 10,
+                 learning_rate: float = 1e-3,
+                 epochs: int = 5,
                  device: str = 'cpu'):
         """
 
+        TODO
         :param env: the Gym environment where it is applied
         :param batch_size:
         :param gamma:
         :param eps_start:
         :param eps_end:
-        :param eps_deacy:
+        :param eps_decay:
+        :param memory_size:
         :param target_update:
+        :param learning_rate:
         :param device: the device where the training occurs, 'cpu', 'gpu' ...
         """
 
@@ -151,14 +158,15 @@ class DQN(object):
         self.gamma = gamma
         self.eps_start = eps_start
         self.eps_end = eps_end
-        self.eps_decay = eps_deacy
+        self.eps_decay = eps_decay
         self.target_update = target_update
+        self.epochs = epochs
         self.device = device
 
         # Get number of actions from gym action space
         self.n_actions = env.action_space.n
 
-        self.memory = ReplayMemory(10000)
+        self.memory = ReplayMemory(memory_size)
 
         # Policy and optimizer
         # Get initial state and its size
@@ -171,64 +179,71 @@ class DQN(object):
         # Put target network on evaluation mode
         self.target_net.eval()
 
-        self.optimizer = optim.Adam(self.policy_net.parameters())
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
 
         # Metrics
         # Steps done is used for action selection and computation of eps threshold
         self.steps_done = 0
 
-    def optimize_model(self):
+    def optimize_model(self, losses):
         """
         Optimize the policy's neural network.
+
+        :param losses: list keeping track of the loss
         """
 
         # If there are not enough samples exit
         if len(self.memory) < self.batch_size:
             return
 
-        transitions = self.memory.sample(self.batch_size)
-        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-        # detailed explanation). This converts batch-array of Transitions
-        # to Transition of batch-arrays.
-        batch = Transition(*zip(*transitions))
+        for epoch in range(self.epochs):
+            transitions = self.memory.sample(self.batch_size)
+            # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
+            # detailed explanation). This converts batch-array of Transitions
+            # to Transition of batch-arrays.
+            batch = Transition(*zip(*transitions))
 
-        # Compute a mask of non-final states and concatenate the batch elements
-        # (a final state would've been the one after which simulation ended)
-        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                batch.next_state)), device=self.device, dtype=torch.bool)
-        non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
+            # Compute a mask of non-final states and concatenate the batch elements
+            # (a final state would've been the one after which simulation ended)
+            non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                                    batch.next_state)), device=self.device, dtype=torch.bool)
+            non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
+            state_batch = torch.cat(batch.state)
+            action_batch = torch.cat(batch.action)
+            reward_batch = torch.cat(batch.reward)
 
-        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-        # columns of actions taken. These are the actions which would've been taken
-        # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+            # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+            # columns of actions taken. These are the actions which would've been taken
+            # for each batch state according to policy_net
+            state_action_values = self.policy_net(state_batch).gather(1, action_batch)
 
-        # Compute V(s_{t+1}) for all next states.
-        # Expected values of actions for non_final_next_states are computed based
-        # on the "older" target_net; selecting their best reward with max(1)[0].
-        # This is merged based on the mask, such that we'll have either the expected
-        # state value or 0 in case the state was final.
-        next_state_values = torch.zeros(self.batch_size, device=self.device)
-        next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
-        # Compute the expected Q values
-        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+            # Compute V(s_{t+1}) for all next states.
+            # Expected values of actions for non_final_next_states are computed based
+            # on the "older" target_net; selecting their best reward with max(1)[0].
+            # This is merged based on the mask, such that we'll have either the expected
+            # state value or 0 in case the state was final.
+            next_state_values = torch.zeros(self.batch_size, device=self.device)
+            next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+            # Compute the expected Q values
+            expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
-        # Compute Huber loss
-        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+            # Compute Huber loss
+            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
 
-        # Optimize the model
-        self.optimizer.zero_grad()
-        loss.backward()
-        # Gradient clipping
-        for param in self.policy_net.parameters():
-            param.grad.data.clamp_(-1, 1)
-        self.optimizer.step()
+            # Track loss
+            losses.append(loss.detach().item())
+
+            # Optimize the model
+            self.optimizer.zero_grad()
+            loss.backward()
+            # Gradient clipping
+            for param in self.policy_net.parameters():
+                param.grad.data.clamp_(-1, 1)
+            self.optimizer.step()
 
     def training_loop(self, num_episodes: int = 50,
                       save_path: str = None,
+                      save_frequency: int = 1000,
                       render_env: bool = False,
                       render_waiting_time: float = 1,
                       plot_duration: bool = True,
@@ -254,6 +269,10 @@ class DQN(object):
         episode_durations = []
         # Keep track of actions taken
         action_counts = {i: 0 for i in range(1, self.n_actions + 1)}
+        # Losses
+        losses = []
+        # Eps
+        eps = []
 
         for i_episode in range(num_episodes):
             # Initialize the environment and state
@@ -265,7 +284,7 @@ class DQN(object):
 
             for t in count():
                 # Select and perform an action on the environment
-                action = self.select_action(screen)
+                action = self.select_action(screen, eps)
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
                 new_screen = torch.from_numpy(convert_state_to_image(new_state))
@@ -290,7 +309,7 @@ class DQN(object):
                 screen = new_screen
 
                 # Perform one step of the optimization (on the target network)
-                self.optimize_model()
+                self.optimize_model(losses)
 
                 # Rendering
                 if render_env:
@@ -298,32 +317,41 @@ class DQN(object):
 
                 if done:
                     episode_durations.append(t + 1)
-                    episodes_rewards.append(np.mean(step_rewards))
+                    episodes_rewards.append(np.sum(step_rewards))
+
+                    lineplot(0, losses, 'Losses', 'Optimization steps', 'Value')
+                    lineplot(1, eps, 'Eps', 'Steps', 'Value')
                     if plot_duration:
-                        lineplot(0, episode_durations, 'Episodes durations', 'Episodes', 'Durations')
+                        lineplot(2, episode_durations, 'Episodes durations', 'Episodes', 'Durations')
                     if plot_mean_reward:
-                        lineplot(1,
+                        lineplot(3,
                                  episodes_rewards,
-                                 'Episode average rewards',
+                                 'Episode cumulative rewards',
                                  f'Episodes (Victories: {len(episodes_victories)} / {i_episode + 1})',
                                  'Rewards',
                                  points=[episodes_victories, episodes_losts],
                                  points_style=[{'c': 'green', 'marker': '*'}, {'c': 'red', 'marker': '.'}],
                                  hline=0.0)
                     if plot_actions_count:
-                        countplot(2, list(action_counts.values()), list(action_counts.keys()), 'Actions taken')
+                        countplot(4, list(action_counts.values()), list(action_counts.keys()), 'Actions taken')
                     break
 
             # Update the target network, copying all weights and biases in DQN
             if i_episode % self.target_update == 0:
                 self.target_net.load_state_dict(self.policy_net.state_dict())
 
-        if save_path:
-            print(f'Model saved at {save_path}')
-            torch.save(self.policy_net.state_dict(), save_path)
+            if save_path and (i_episode + 1) % save_frequency == 0:
+                save_filename = save_path + f'weights_{i_episode + 1}.pt'
+                print(f'Model saved at {save_filename}')
+                torch.save(self.target_net.state_dict(), save_filename)
+
+        plt.figure(5)
+        plt.title('Rolling average (over 1000 episodes) of cumulative rewards.')
+        pd.DataFrame({'r': episodes_rewards})['r'].rolling(window=1000).mean().plot()
+        plt.show()
         print('Training complete')
 
-    def select_action(self, state) -> torch.Tensor:
+    def select_action(self, state, eps) -> torch.Tensor:
         """
         Apply the policy on the observed state to decide the next action or explore by choosing a random action.
 
@@ -334,6 +362,8 @@ class DQN(object):
         # Push the agent to exploit after many steps rather than explore
         eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * \
                         math.exp(-1. * self.steps_done / self.eps_decay)
+
+        eps.append(eps_threshold)
 
         self.steps_done += 1
 

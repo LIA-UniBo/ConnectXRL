@@ -1,4 +1,4 @@
-from typing import Union, Callable,  Any
+from typing import Union, Callable, Any, Tuple
 
 import gym
 import numpy as np
@@ -93,7 +93,7 @@ class ConnectXGymEnv(gym.Env):
         else:
             return -1 / (self.rows * self.columns)
 
-    def step(self, action: int) -> tuple[np.ndarray, float, Union[bool, Any], Union[dict, Any]]:
+    def step(self, action: int) -> Tuple[np.ndarray, float, Union[bool, Any], Union[dict, Any]]:
         """
 
         :param action: the chosen column

@@ -53,20 +53,20 @@ class CNNPolicy(nn.Module):
         self.action_space_size = action_space_size
 
         self.feature_extractor = nn.Sequential(
-            nn.Conv2d(input_shape[0], 32, kernel_size=(2, 2), stride=(1, 1)),
+            nn.Conv2d(input_shape[0], 64, kernel_size=(3, 3), stride=(1, 1)),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=(2, 2), stride=(1, 1)),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=(2, 2), stride=(1, 1)),
-            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1)),
+            nn.ReLU()
         )
 
-        self.feature_size = self.feature_extractor(torch.zeros(1, *self.input_shape)).view(1, -1).size(1)
+        with torch.no_grad():
+            self.feature_size = self.feature_extractor(torch.zeros(1, *self.input_shape)).view(1, -1).size(1)
+            print(self.feature_size)
 
         self.fc_head = nn.Sequential(
-            nn.Linear(self.feature_size, 512),
+            nn.Linear(self.feature_size, 64),
             nn.ReLU(),
-            nn.Linear(512, self.action_space_size),
+            nn.Linear(64, self.action_space_size),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
