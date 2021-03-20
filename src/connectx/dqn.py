@@ -1,6 +1,8 @@
 import math
 import random
+import pylab as pl
 import matplotlib.pyplot as plt
+from IPython import display
 from collections import namedtuple
 from itertools import count
 
@@ -9,6 +11,8 @@ import pandas as pd
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
+from IPython.core.display import clear_output
+from matplotlib.axes import Axes
 
 from src.connectx.environment import ConnectXGymEnv, convert_state_to_image
 from src.connectx.policy import CNNPolicy
@@ -16,30 +20,25 @@ from src.connectx.policy import CNNPolicy
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
 
 
-def countplot(plot_id: int,
+def countplot(plot_id: Axes,
               data: list,
               labels: list,
               title: str) -> None:
     """
     Create a bar plot.
 
-    :param plot_id: plot id
+    :param plot_id: sub plot axes
     :param data: the list containing the values
     :param labels: the list containing the labels
     :param title: the title of the bar plot
     """
 
-    plt.figure(plot_id)
-    plt.clf()
     data_torch = torch.tensor(data, dtype=torch.float)
-    plt.title(title)
-    plt.bar(labels, data_torch.numpy())
-
-    # Pause a bit so that plots are updated
-    plt.pause(0.001)
+    plot_id.title.set_text(title)
+    plot_id.bar(labels, data_torch.numpy())
 
 
-def lineplot(plot_id: int,
+def lineplot(plot_id: Axes,
              data: list,
              title: str,
              xlabel: str,
@@ -50,7 +49,7 @@ def lineplot(plot_id: int,
     """
     Plot the data of the last episodes.
 
-    :param plot_id: plot id
+    :param plot_id: sub plot axes
     :param data: list to plot
     :param title: title of the plot
     :param xlabel: title of the x-axis
@@ -60,20 +59,16 @@ def lineplot(plot_id: int,
     :param hline: vertical coordinate where to draw a line
     """
 
-    plt.figure(plot_id)
-    plt.clf()
     data_torch = torch.tensor(data, dtype=torch.float)
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.plot(data_torch.numpy())
+    plot_id.title.set_text(title)
+    plot_id.set_xlabel(xlabel)
+    plot_id.set_ylabel(ylabel)
+    plot_id.plot(data_torch.numpy())
     for i, p in enumerate(points):
-        plt.scatter(p, data_torch[p], **points_style[i])
+        plot_id.scatter(p, data_torch[p], **points_style[i])
     if hline is not None:
-        plt.axhline(hline, color='red', linestyle='dashed')
+        plot_id.axhline(hline, color='red', linestyle='dashed')
 
-    # Pause a bit so that plots are updated
-    plt.pause(0.001)
 
     """
     if is_ipython:
@@ -129,27 +124,27 @@ class DQN(object):
     def __init__(self,
                  env,
                  batch_size: int = 128,
-                 gamma: float = 0.999,
-                 eps_start: float = 0.9,
-                 eps_end: float = 0.05,
-                 eps_decay: float = 200,
-                 memory_size: int = 10000,
-                 target_update: int = 10,
+                 gamma: float = 0.99,
+                 eps_start: float = 1.0,
+                 eps_end: float = 0.01,
+                 eps_decay: float = 10000,
+                 memory_size: int = 100000,
+                 target_update: int = 1000,
                  learning_rate: float = 1e-3,
-                 epochs: int = 5,
-                 device: str = 'cpu'):
+                 epochs: int = 2,
+                 device: str = 'cpu',
+                 notebook: bool = False):
         """
 
-        TODO
         :param env: the Gym environment where it is applied
-        :param batch_size:
-        :param gamma:
-        :param eps_start:
-        :param eps_end:
-        :param eps_decay:
-        :param memory_size:
-        :param target_update:
-        :param learning_rate:
+        :param batch_size: size of samples from  the memory
+        :param gamma: discount factor
+        :param eps_start: epsilon-greedy initial value
+        :param eps_end: epsilon-greedy final value
+        :param eps_decay: epsilon-greedy dacay
+        :param memory_size: size of the experience replay
+        :param target_update: after how many episodes the target network is updated
+        :param learning_rate: optimizer learning rate
         :param device: the device where the training occurs, 'cpu', 'gpu' ...
         """
 
@@ -162,6 +157,7 @@ class DQN(object):
         self.target_update = target_update
         self.epochs = epochs
         self.device = device
+        self.notebook = notebook
 
         # Get number of actions from gym action space
         self.n_actions = env.action_space.n
@@ -194,6 +190,7 @@ class DQN(object):
 
         # If there are not enough samples exit
         if len(self.memory) < self.batch_size:
+            losses.append(0)
             return
 
         for epoch in range(self.epochs):
@@ -241,7 +238,8 @@ class DQN(object):
                 param.grad.data.clamp_(-1, 1)
             self.optimizer.step()
 
-    def training_loop(self, num_episodes: int = 50,
+    def training_loop(self,
+                      num_episodes: int = 50,
                       save_path: str = None,
                       save_frequency: int = 1000,
                       render_env: bool = False,
@@ -254,6 +252,7 @@ class DQN(object):
 
         :param num_episodes: the number of episodes to train
         :param save_path: path where the model is saved at the end
+        :param save_frequency: how many episodes between each weight saving
         :param render_env: If true render the game board at each step
         :param render_waiting_time: paused time between a step and another
         :param plot_duration: if True plot the duration of each episode at the end
@@ -274,11 +273,16 @@ class DQN(object):
         # Eps
         eps = []
 
+        if self.notebook:
+            fig, axs = pl.subplots(3, 2, figsize=(22, 12), constrained_layout=True)
+        else:
+            fig, axs = plt.subplots(3, 2, constrained_layout=True)
+
         for i_episode in range(num_episodes):
             # Initialize the environment and state
             state = self.env.reset()
             # Get image and convert to torch tensor
-            screen = torch.from_numpy(convert_state_to_image(state))
+            screen = torch.from_numpy(convert_state_to_image(state)).to(self.device)
 
             step_rewards = []
 
@@ -287,7 +291,7 @@ class DQN(object):
                 action = self.select_action(screen, eps)
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
-                new_screen = torch.from_numpy(convert_state_to_image(new_state))
+                new_screen = torch.from_numpy(convert_state_to_image(new_state)).to(self.device)
 
                 # Metrics
                 step_rewards.append(reward.detach().item())
@@ -319,12 +323,17 @@ class DQN(object):
                     episode_durations.append(t + 1)
                     episodes_rewards.append(np.sum(step_rewards))
 
-                    lineplot(0, losses, 'Losses', 'Optimization steps', 'Value')
-                    lineplot(1, eps, 'Eps', 'Steps', 'Value')
+                    clear_output(wait=True)
+                    axs[0, 0].clear()
+                    lineplot(axs[0, 0], losses, 'Losses', 'Optimization steps', 'Value')
+                    axs[0, 1].clear()
+                    lineplot(axs[0, 1], eps, 'Eps', 'Steps', 'Value')
                     if plot_duration:
-                        lineplot(2, episode_durations, 'Episodes durations', 'Episodes', 'Durations')
+                        axs[1, 0].clear()
+                        lineplot(axs[1, 0], episode_durations, 'Episodes durations', 'Episodes', 'Durations')
                     if plot_mean_reward:
-                        lineplot(3,
+                        axs[1, 1].clear()
+                        lineplot(axs[1, 1],
                                  episodes_rewards,
                                  'Episode cumulative rewards',
                                  f'Episodes (Victories: {len(episodes_victories)} / {i_episode + 1})',
@@ -333,7 +342,23 @@ class DQN(object):
                                  points_style=[{'c': 'green', 'marker': '*'}, {'c': 'red', 'marker': '.'}],
                                  hline=0.0)
                     if plot_actions_count:
-                        countplot(4, list(action_counts.values()), list(action_counts.keys()), 'Actions taken')
+                        axs[2, 0].clear()
+                        countplot(axs[2, 0], list(action_counts.values()), list(action_counts.keys()), 'Actions taken')
+
+                    if (i_episode + 0) % 1 == 50:
+                        axs[2, 1].clear()
+                        axs[2, 1].title.set_text('Rolling average (over 1000 episodes) of cumulative rewards.')
+                        axs[2, 1].plot(pd.DataFrame({'r': episodes_rewards})['r'].rolling(window=1000).mean())
+
+                    # Pause a bit so that plots are updated
+                    if self.notebook:
+                        display.clear_output(wait=True)
+                        display.display(pl.gcf())
+                    else:
+                        display.clear_output(wait=True)
+                        display.display(plt.gcf())
+                        plt.pause(0.001)
+
                     break
 
             # Update the target network, copying all weights and biases in DQN
@@ -345,10 +370,6 @@ class DQN(object):
                 print(f'Model saved at {save_filename}')
                 torch.save(self.target_net.state_dict(), save_filename)
 
-        plt.figure(5)
-        plt.title('Rolling average (over 1000 episodes) of cumulative rewards.')
-        pd.DataFrame({'r': episodes_rewards})['r'].rolling(window=1000).mean().plot()
-        plt.show()
         print('Training complete')
 
     def select_action(self, state, eps) -> torch.Tensor:
@@ -382,4 +403,5 @@ class DQN(object):
 env = ConnectXGymEnv('random', True)
 dqn = DQN(env)
 
-dqn.training_loop(10000, save_path='./')
+dqn.training_loop(20000, save_path='./')
+input('Press to close ...')

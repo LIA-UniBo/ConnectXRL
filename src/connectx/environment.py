@@ -91,7 +91,7 @@ class ConnectXGymEnv(gym.Env):
             # The opponent has won the game
             return LOST_REWARD
         else:
-            return -1 / (self.rows * self.columns)
+            return 1 / (self.rows * self.columns)
 
     def step(self, action: int) -> Tuple[np.ndarray, float, Union[bool, Any], Union[dict, Any]]:
         """
