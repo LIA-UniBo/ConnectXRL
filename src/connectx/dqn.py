@@ -128,9 +128,9 @@ class DQN(object):
                  eps_start: float = 1.0,
                  eps_end: float = 0.01,
                  eps_decay: float = 10000,
-                 memory_size: int = 100000,
-                 target_update: int = 1000,
-                 learning_rate: float = 1e-3,
+                 memory_size: int = 10000,
+                 target_update: int = 500,
+                 learning_rate: float = 1e-2,
                  epochs: int = 2,
                  device: str = 'cpu',
                  notebook: bool = False):
@@ -244,9 +244,11 @@ class DQN(object):
                       save_frequency: int = 1000,
                       render_env: bool = False,
                       render_waiting_time: float = 1,
+                      update_plots_frequency: int = 100,
                       plot_duration: bool = True,
                       plot_mean_reward: bool = True,
-                      plot_actions_count: bool = True):
+                      plot_actions_count: bool = True,
+                      cumulative_reward_avg_roll_window: int = 100):
         """
         The DQN training algorithm.
 
@@ -255,9 +257,11 @@ class DQN(object):
         :param save_frequency: how many episodes between each weight saving
         :param render_env: If true render the game board at each step
         :param render_waiting_time: paused time between a step and another
+        :param update_plots_frequency: how many episodes between each update of the plots
         :param plot_duration: if True plot the duration of each episode at the end
         :param plot_mean_reward: if True tracks and plots the average reward at each episode
         :param plot_actions_count: if True plots a bar plot representing the counter of actions taken
+        :param cumulative_reward_avg_roll_window :the window used to print the cumulative reward rolling average
         """
         # Keep track of rewards
         episodes_rewards = []
@@ -285,10 +289,11 @@ class DQN(object):
             screen = torch.from_numpy(convert_state_to_image(state)).to(self.device)
 
             step_rewards = []
+            step_eps = []
 
             for t in count():
                 # Select and perform an action on the environment
-                action = self.select_action(screen, eps)
+                action = self.select_action(screen, step_eps)
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
                 new_screen = torch.from_numpy(convert_state_to_image(new_state)).to(self.device)
@@ -322,42 +327,46 @@ class DQN(object):
                 if done:
                     episode_durations.append(t + 1)
                     episodes_rewards.append(np.sum(step_rewards))
+                    eps.append(step_eps[0])
 
-                    clear_output(wait=True)
-                    axs[0, 0].clear()
-                    lineplot(axs[0, 0], losses, 'Losses', 'Optimization steps', 'Value')
-                    axs[0, 1].clear()
-                    lineplot(axs[0, 1], eps, 'Eps', 'Steps', 'Value')
-                    if plot_duration:
-                        axs[1, 0].clear()
-                        lineplot(axs[1, 0], episode_durations, 'Episodes durations', 'Episodes', 'Durations')
-                    if plot_mean_reward:
-                        axs[1, 1].clear()
-                        lineplot(axs[1, 1],
-                                 episodes_rewards,
-                                 'Episode cumulative rewards',
-                                 f'Episodes (Victories: {len(episodes_victories)} / {i_episode + 1})',
-                                 'Rewards',
-                                 points=[episodes_victories, episodes_losts],
-                                 points_style=[{'c': 'green', 'marker': '*'}, {'c': 'red', 'marker': '.'}],
-                                 hline=0.0)
-                    if plot_actions_count:
-                        axs[2, 0].clear()
-                        countplot(axs[2, 0], list(action_counts.values()), list(action_counts.keys()), 'Actions taken')
+                    if i_episode % update_plots_frequency == 0:
+                        clear_output(wait=True)
+                        axs[0, 0].clear()
+                        lineplot(axs[0, 0], losses, 'Losses', 'Optimization steps', 'Value')
+                        axs[0, 1].clear()
+                        lineplot(axs[0, 1], eps, 'Epsilon', 'Episodes', 'Eps')
+                        if plot_duration:
+                            axs[1, 0].clear()
+                            lineplot(axs[1, 0], episode_durations, 'Episodes durations', 'Episodes', 'Durations')
+                        if plot_mean_reward:
+                            axs[1, 1].clear()
+                            lineplot(axs[1, 1],
+                                     episodes_rewards,
+                                     'Episode cumulative rewards',
+                                     f'Episodes (Victories: {len(episodes_victories)} / {i_episode + 1})',
+                                     'Rewards',
+                                     points=[episodes_victories, episodes_losts],
+                                     points_style=[{'c': 'green', 'marker': '*'}, {'c': 'red', 'marker': '.'}],
+                                     hline=0.0)
+                        if plot_actions_count:
+                            axs[2, 0].clear()
+                            countplot(axs[2, 0], list(action_counts.values()), list(action_counts.keys()), 'Actions taken')
 
-                    if (i_episode + 0) % 1 == 50:
-                        axs[2, 1].clear()
-                        axs[2, 1].title.set_text('Rolling average (over 1000 episodes) of cumulative rewards.')
-                        axs[2, 1].plot(pd.DataFrame({'r': episodes_rewards})['r'].rolling(window=1000).mean())
+                        if cumulative_reward_avg_roll_window:
+                            axs[2, 1].clear()
+                            axs[2, 1].title.set_text(f'Rolling average (over {cumulative_reward_avg_roll_window} episodes)'
+                                                     f' of cumulative rewards.')
+                            axs[2, 1].plot(pd.DataFrame({'r': episodes_rewards})['r'].rolling(
+                                window=cumulative_reward_avg_roll_window).mean())
 
-                    # Pause a bit so that plots are updated
-                    if self.notebook:
-                        display.clear_output(wait=True)
-                        display.display(pl.gcf())
-                    else:
-                        display.clear_output(wait=True)
-                        display.display(plt.gcf())
-                        plt.pause(0.001)
+                        # Pause a bit so that plots are updated
+                        if self.notebook:
+                            display.clear_output(wait=True)
+                            display.display(pl.gcf())
+                        else:
+                            display.clear_output(wait=True)
+                            display.display(plt.gcf())
+                            plt.pause(0.001)
 
                     break
 

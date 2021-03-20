@@ -6,10 +6,6 @@ import matplotlib.pyplot as plt
 from kaggle_environments import make, get
 from webcolors import rgb_to_name
 
-INVALID_REWARD = -10.0
-VICTORY_REWARD = 1.0
-LOST_REWARD = -1.0
-
 
 def convert_state_to_image(state: np.ndarray,
                            matplotlib: bool = False,
@@ -43,7 +39,11 @@ class ConnectXGymEnv(gym.Env):
 
     def __init__(self,
                  opponent: Union[str, Callable],
-                 first: bool):
+                 first: bool,
+                 invalid_reward: float = 0.0,
+                 victory_reward: float = 1.0,
+                 lost_reward: float = -1.0,
+                 draw_reward: float = 0.5):
         """
 
         :param first: if True the agent will be trained as the first player
@@ -51,6 +51,11 @@ class ConnectXGymEnv(gym.Env):
         """
         self.opponent = opponent
         self.first = first
+
+        self.invalid_reward = invalid_reward
+        self.victory_reward = victory_reward
+        self.lost_reward = lost_reward
+        self.draw_reward = draw_reward
 
         self.kaggle_env = make('connectx', debug=True)
         self.env = self.kaggle_env.train([None, opponent] if first else [opponent, None])
@@ -86,10 +91,10 @@ class ConnectXGymEnv(gym.Env):
         """
         if original_reward == 1:
             # The agent has won the game
-            return VICTORY_REWARD
+            return self.victory_reward
         elif done:
             # The opponent has won the game
-            return LOST_REWARD
+            return self.lost_reward
         else:
             return 1 / (self.rows * self.columns)
 
@@ -114,7 +119,7 @@ class ConnectXGymEnv(gym.Env):
             elif done:
                 end_status = 'lost'
         else:
-            reward, done, end_status = INVALID_REWARD, True, 'invalid'
+            reward, done, end_status = self.invalid_reward, True, 'invalid'
         # The observed board is returned as a matrix even if internally is used as an array
         return np.array(self.obs['board']).reshape(self.rows, self.columns, 1), reward, done, {'end_status': end_status}
 
@@ -140,6 +145,7 @@ class ConnectXGymEnv(gym.Env):
             plt.xlabel(f'Player1: {rgb_to_name(first_player_color)} Player2: {rgb_to_name(second_player_color)}')
             plt.title('ConnectX')
             plt.imshow(state, interpolation='none')
+            plt.grid()
 
             # Pause a bit so that plots are updated and visible
             render_waiting_time = get(kwargs, float, 1, path=["render_waiting_time"])
