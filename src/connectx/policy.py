@@ -61,7 +61,6 @@ class CNNPolicy(nn.Module):
 
         with torch.no_grad():
             self.feature_size = self.feature_extractor(torch.zeros(1, *self.input_shape)).view(1, -1).size(1)
-            print(self.feature_size)
 
         self.fc_head = nn.Sequential(
             nn.Linear(self.feature_size, 64),

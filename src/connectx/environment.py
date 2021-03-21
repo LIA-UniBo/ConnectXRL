@@ -4,14 +4,19 @@ import gym
 import numpy as np
 import matplotlib.pyplot as plt
 from kaggle_environments import make, get
+from matplotlib.axes import Axes
 from webcolors import rgb_to_name
+
+# Color ranges, namely [0-1] vs [0-255]
+VMIN = 0
+VMAX = 1
 
 
 def convert_state_to_image(state: np.ndarray,
                            matplotlib: bool = False,
-                           num_to_rgb: np.ndarray = np.array([[1, 1, 1],
-                                                              [1, 0, 0],
-                                                              [0, 0, 1]])) -> Union[np.ndarray, None]:
+                           num_to_rgb: np.ndarray = np.array([[VMAX, VMAX, VMAX],
+                                                              [VMAX, VMIN, VMIN],
+                                                              [VMIN, VMIN, VMAX]])) -> Union[np.ndarray, None]:
     """
 
     :param state: the original state from the environment. Will contain values 0 for empty cells, 1 and 2 for the stones
@@ -29,6 +34,34 @@ def convert_state_to_image(state: np.ndarray,
         return np.squeeze(state)
     else:
         return state.transpose(2, 3, 0, 1).astype(np.float32)
+
+
+def show_board_grid(ax: Axes,
+                    rows: int,
+                    columns: int,
+                    color: str = 'black') -> None:
+    """
+    Applies a grid on the axes. Used to add a grid in the game board.
+
+    :param rows: the rows on the board
+    :param columns: the columns on the board
+    :param ax: the axes where the grid is applied
+    :param color: grid color (matplotlib format)
+    """
+    # Major ticks
+    ax.set_xticks(np.arange(0, columns, 1))
+    ax.set_yticks(np.arange(0, rows, 1))
+
+    # Labels for major ticks
+    ax.set_xticklabels(np.arange(1, columns + 1, 1))
+    ax.set_yticklabels(np.arange(1, rows + 1, 1))
+
+    # Minor ticks
+    ax.set_xticks(np.arange(-.5, columns, 1), minor=True)
+    ax.set_yticks(np.arange(-.5, rows, 1), minor=True)
+
+    # Gridlines based on minor ticks
+    ax.grid(which='minor', color=color, linestyle='-', linewidth=2)
 
 
 class ConnectXGymEnv(gym.Env):
@@ -134,9 +167,9 @@ class ConnectXGymEnv(gym.Env):
         if mode == 'rgb_image':
             state = np.array(self.kaggle_env.state[0]['observation']['board']).reshape(self.rows, self.columns, 1)
 
-            empty_color = get(kwargs, list, [255, 255, 255], path=["empty_color"])
-            first_player_color = get(kwargs, list, [255, 0, 0], path=["first_player_color"])
-            second_player_color = get(kwargs, list, [0, 0, 255], path=["second_player_color"])
+            empty_color = get(kwargs, list, [VMAX * 255, VMAX * 255, VMAX * 255], path=["empty_color"])
+            first_player_color = get(kwargs, list, [VMAX * 255, VMIN * 255, VMIN * 255], path=["first_player_color"])
+            second_player_color = get(kwargs, list, [VMIN * 255, VMIN * 255, VMAX * 255], path=["second_player_color"])
             state = convert_state_to_image(state, matplotlib=True, num_to_rgb=np.array([empty_color,
                                                                                         first_player_color,
                                                                                         second_player_color]))
@@ -144,8 +177,12 @@ class ConnectXGymEnv(gym.Env):
             plt.clf()
             plt.xlabel(f'Player1: {rgb_to_name(first_player_color)} Player2: {rgb_to_name(second_player_color)}')
             plt.title('ConnectX')
-            plt.imshow(state, interpolation='none')
-            plt.grid()
+            plt.imshow(state,
+                       interpolation='none',
+                       vmin=VMIN,
+                       vmax=VMAX,
+                       aspect='equal')
+            show_board_grid(plt.axes(), self.rows, self.columns)
 
             # Pause a bit so that plots are updated and visible
             render_waiting_time = get(kwargs, float, 1, path=["render_waiting_time"])

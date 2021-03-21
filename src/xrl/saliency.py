@@ -4,15 +4,15 @@ import matplotlib.pyplot as plt
 
 import torch
 
-from src.connectx.policy import CNNPolicy
-from src.connectx.environment import convert_state_to_image, ConnectXGymEnv
+from src.connectx.environment import convert_state_to_image, ConnectXGymEnv, show_board_grid
 
 
 def show_saliency_map(env: ConnectXGymEnv,
                       policy: torch.nn.Module,
                       num_episodes: int = 10,
                       render_waiting_time: float = 0,
-                      device: str = 'cpu'):
+                      device: str = 'cpu',
+                      above: bool = False) -> None:
     """
 
     :param env: Gym environment
@@ -20,11 +20,22 @@ def show_saliency_map(env: ConnectXGymEnv,
     :param num_episodes: how many episodes
     :param render_waiting_time: if 0 or None you can skip frames manually otherwise frames are displayed automatically
     :param device: the device used to store tensors
+    :param above: if True the saliency map is applied over the board
     """
 
     policy.eval()
-    fig, ax = plt.subplots(1, 2)
-    plt.grid()
+
+    # Rendering setup
+    fig, ax = plt.subplots(1, 1 if above else 2)
+
+    if above:
+        axes_g = axes_s = ax
+    else:
+        axes_g = ax[0]
+        axes_s = ax[1]
+        show_board_grid(axes_s, env.rows, env.columns)
+
+    show_board_grid(axes_g, env.rows, env.columns)
 
     for i_episode in range(num_episodes):
         # Initialize the environment and state
@@ -33,8 +44,20 @@ def show_saliency_map(env: ConnectXGymEnv,
         screen = torch.from_numpy(convert_state_to_image(state)).to(device)
 
         # Rendering
-        im_g = ax[0].imshow(screen.squeeze().permute(1, 2, 0))
-        im_s = ax[1].imshow(torch.ones((screen.shape[2], screen.shape[3])).data.numpy(), cmap='gray', vmin=0, vmax=1)
+        im_g = axes_g.imshow(screen.squeeze().permute(1, 2, 0))
+        im_s = axes_s.imshow(torch.ones((screen.shape[2], screen.shape[3])).data.numpy(),
+                             cmap='binary' if above else 'Greens',
+                             vmin=0,
+                             vmax=1,
+                             alpha=0.5 if above else 1)
+
+        # Add colorbar only once
+        if i_episode == 0:
+            cax = fig.add_axes([axes_s.get_position().x1 + 0.01,
+                                axes_s.get_position().y0, 0.02,
+                                axes_s.get_position().height])
+
+            plt.colorbar(im_s, cax=cax)
 
         for t in count():
 
@@ -52,15 +75,15 @@ def show_saliency_map(env: ConnectXGymEnv,
             print(torch.abs(screen.grad))
             print(torch.ones((screen.shape[2], screen.shape[3])).data.numpy())
 
-            # Rendering
+            # Update rendering
             im_g.set_data(screen.squeeze().permute(1, 2, 0).data.numpy())
             im_s.set_data(torch.abs(screen.grad).max(1)[0].squeeze().data.numpy())
             fig.canvas.draw_idle()
             if render_waiting_time:
                 plt.pause(render_waiting_time)
             else:
-                input(f"{t}/{i_episode} Press Enter to continue...")
                 plt.pause(0.000001)
+                input(f"{t}/{i_episode} Press Enter to continue...")
 
             action = action.max(1)[1].view(1, 1)
             # Continue the game
@@ -73,17 +96,3 @@ def show_saliency_map(env: ConnectXGymEnv,
                 break
 
     print('Analysis complete')
-
-
-env = ConnectXGymEnv('random', True)
-init_screen = convert_state_to_image(env.reset())
-screen_shape = (init_screen.shape[1], init_screen.shape[2], init_screen.shape[3])
-
-agent = CNNPolicy(env.action_space.n,
-                  screen_shape)
-
-device = 'cpu'
-weight_path = 'TODO'
-agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
-
-show_saliency_map(env, agent, 30, device=device)

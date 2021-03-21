@@ -1,5 +1,7 @@
 import math
 import random
+from typing import List
+
 import pylab as pl
 import matplotlib.pyplot as plt
 from IPython import display
@@ -12,69 +14,12 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 from IPython.core.display import clear_output
-from matplotlib.axes import Axes
 
 from src.connectx.environment import ConnectXGymEnv, convert_state_to_image
+from src.connectx.plots import lineplot, countplot
 from src.connectx.policy import CNNPolicy
 
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
-
-
-def countplot(plot_id: Axes,
-              data: list,
-              labels: list,
-              title: str) -> None:
-    """
-    Create a bar plot.
-
-    :param plot_id: sub plot axes
-    :param data: the list containing the values
-    :param labels: the list containing the labels
-    :param title: the title of the bar plot
-    """
-
-    data_torch = torch.tensor(data, dtype=torch.float)
-    plot_id.title.set_text(title)
-    plot_id.bar(labels, data_torch.numpy())
-
-
-def lineplot(plot_id: Axes,
-             data: list,
-             title: str,
-             xlabel: str,
-             ylabel: str,
-             points: list = (),
-             points_style: list = (),
-             hline: float = None) -> None:
-    """
-    Plot the data of the last episodes.
-
-    :param plot_id: sub plot axes
-    :param data: list to plot
-    :param title: title of the plot
-    :param xlabel: title of the x-axis
-    :param ylabel: title of the y-axis
-    :param points: list of lists of positions where to draw points on the line
-    :param points_style: list of dicts representing the style of each list of positions
-    :param hline: vertical coordinate where to draw a line
-    """
-
-    data_torch = torch.tensor(data, dtype=torch.float)
-    plot_id.title.set_text(title)
-    plot_id.set_xlabel(xlabel)
-    plot_id.set_ylabel(ylabel)
-    plot_id.plot(data_torch.numpy())
-    for i, p in enumerate(points):
-        plot_id.scatter(p, data_torch[p], **points_style[i])
-    if hline is not None:
-        plot_id.axhline(hline, color='red', linestyle='dashed')
-
-
-    """
-    if is_ipython:
-        display.clear_output(wait=True)
-        display.display(plt.gcf())
-    """
 
 
 class ReplayMemory(object):
@@ -91,7 +36,7 @@ class ReplayMemory(object):
         self.memory = []
         self.position = 0
 
-    def push(self, *args):
+    def push(self, *args) -> None:
         """
         Saves a transition. When the total space is filled the older data is replaced.
         Usually a transition it is something like (state, action) pair mapped to its (next_state, reward) result.
@@ -122,7 +67,7 @@ class ReplayMemory(object):
 
 class DQN(object):
     def __init__(self,
-                 env,
+                 env: ConnectXGymEnv,
                  batch_size: int = 128,
                  gamma: float = 0.99,
                  eps_start: float = 1.0,
@@ -181,7 +126,7 @@ class DQN(object):
         # Steps done is used for action selection and computation of eps threshold
         self.steps_done = 0
 
-    def optimize_model(self, losses):
+    def optimize_model(self, losses: List[float]) -> None:
         """
         Optimize the policy's neural network.
 
@@ -248,7 +193,7 @@ class DQN(object):
                       plot_duration: bool = True,
                       plot_mean_reward: bool = True,
                       plot_actions_count: bool = True,
-                      cumulative_reward_avg_roll_window: int = 100):
+                      cumulative_reward_avg_roll_window: int = 100) -> None:
         """
         The DQN training algorithm.
 
@@ -351,12 +296,13 @@ class DQN(object):
                                      hline=0.0)
                         if plot_actions_count:
                             axs[2, 0].clear()
-                            countplot(axs[2, 0], list(action_counts.values()), list(action_counts.keys()), 'Actions taken')
+                            countplot(axs[2, 0], list(action_counts.values()), list(action_counts.keys()),
+                                      'Actions taken')
 
                         if cumulative_reward_avg_roll_window:
                             axs[2, 1].clear()
-                            axs[2, 1].title.set_text(f'Rolling average (over {cumulative_reward_avg_roll_window} episodes)'
-                                                     f' of cumulative rewards.')
+                            axs[2, 1].title.set_text(f'Rolling average (over {cumulative_reward_avg_roll_window} '
+                                                     f'episodes) of cumulative rewards.')
                             axs[2, 1].plot(pd.DataFrame({'r': episodes_rewards})['r'].rolling(
                                 window=cumulative_reward_avg_roll_window).mean())
 
@@ -382,11 +328,14 @@ class DQN(object):
 
         print('Training complete')
 
-    def select_action(self, state, eps) -> torch.Tensor:
+    def select_action(self,
+                      state: torch.Tensor,
+                      eps: List[float]) -> torch.Tensor:
         """
         Apply the policy on the observed state to decide the next action or explore by choosing a random action.
 
         :param state: the current state
+        :param eps: the list containing the computed eps (metrics)
         :return: the chosen action
         """
         sample = random.random()
@@ -408,10 +357,3 @@ class DQN(object):
         else:
             # Exploration
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
-
-
-env = ConnectXGymEnv('random', True)
-dqn = DQN(env)
-
-dqn.training_loop(20000, save_path='./')
-input('Press to close ...')
