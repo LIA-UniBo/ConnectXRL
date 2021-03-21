@@ -301,17 +301,18 @@ class DQN(object):
                 # Metrics
                 step_rewards.append(reward.detach().item())
                 action_counts[action.detach().item() + 1] += 1
-
+                push = True
                 if done:
-                    new_state = None
-                    new_screen = None
                     if info['end_status'] == 'victory':
                         episodes_victories.append(i_episode)
                     elif info['end_status'] == 'lost':
                         episodes_losts.append(i_episode)
+                        self.memory.memory[self.memory.position - 1]._replace(reward=reward)
+                        push = False
 
                 # Store the transition in memory
-                self.memory.push(screen, action, new_screen, reward)
+                if push:
+                    self.memory.push(screen, action, new_screen, reward)
 
                 # Update old state and image
                 # state = new_state
