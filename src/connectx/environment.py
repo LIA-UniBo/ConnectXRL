@@ -9,9 +9,9 @@ from webcolors import rgb_to_name
 
 def convert_state_to_image(state: np.ndarray,
                            matplotlib: bool = False,
-                           num_to_rgb: np.ndarray = np.array([[255, 255, 255],
-                                                              [255, 0, 0],
-                                                              [0, 0, 255]])) -> Union[np.ndarray, None]:
+                           num_to_rgb: np.ndarray = np.array([[1, 1, 1],
+                                                              [1, 0, 0],
+                                                              [0, 0, 1]])) -> Union[np.ndarray, None]:
     """
 
     :param state: the original state from the environment. Will contain values 0 for empty cells, 1 and 2 for the stones
