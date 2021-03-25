@@ -114,7 +114,7 @@ class ConnectXGymEnv(gym.Env):
         self.obs = self.env.reset()
         return np.array(self.obs['board']).reshape(self.rows, self.columns, 1)
 
-    def reward_shaping(self, original_reward, done) -> float:
+    def reward_shaping(self, original_reward, done, draw) -> float:
         """
         Modifies original rewards.
 
@@ -126,8 +126,12 @@ class ConnectXGymEnv(gym.Env):
             # The agent has won the game
             return self.victory_reward
         elif done:
+            # The game ended in a draw
+            if draw:
+                return self.draw_reward
             # The opponent has won the game
-            return self.lost_reward
+            else:
+                return self.lost_reward
         else:
             return -1 / (self.rows * self.columns)
 
@@ -142,10 +146,15 @@ class ConnectXGymEnv(gym.Env):
 
         # Check if the action is valid otherwise punish the agent
         if self.obs['board'][int(action)] == 0:
+            print(self.obs['board'])
+            draw = False
+            if all(v for v in self.obs['board']):
+                draw = True
+                print(self.obs['board'])
             # Perform the action
             self.obs, original_reward, done, _ = self.env.step(int(action))
             # Modify the reward
-            reward = self.reward_shaping(original_reward, done)
+            reward = self.reward_shaping(original_reward, done, draw)
             # Set victory status
             if original_reward == 1:
                 end_status = 'victory'
