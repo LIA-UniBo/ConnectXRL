@@ -12,7 +12,7 @@ agent = CNNPolicy(env.action_space.n,
                   screen_shape)
 
 device = 'cpu'
-weight_path = './weights_2000.pt'
+weight_path = './weights_1000.pt'
 agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
 show_saliency_map(env, agent, 30, device=device)

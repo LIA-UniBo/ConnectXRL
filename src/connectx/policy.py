@@ -1,5 +1,6 @@
 from random import choice
 from typing import Tuple
+from torch.nn import functional as F
 
 import torch
 from torch import nn
@@ -35,6 +36,46 @@ def dqn_agent(observation: dict,
         return choice([col for col in range(configuration.columns) if observation.board[int(col)] == 0])
 
 
+class NonLocalBlock(nn.Module):
+    """
+    spatial non-local block: https://arxiv.org/pdf/1711.07971.pdf
+    """
+
+    def __init__(self, input_channels):
+        """
+        Spatial non-local attention over raws and columns
+        :param input_channels: number of channels of input image
+        :return: image with channels doubled
+        """
+        super().__init__()
+        self.teta = nn.Conv2d(in_channels=input_channels, out_channels=input_channels, kernel_size=(1, 1))
+        self.fi = nn.Conv2d(in_channels=input_channels, out_channels=input_channels, kernel_size=(1, 1))
+        self.gi = nn.Conv2d(in_channels=input_channels, out_channels=input_channels, kernel_size=(1, 1))
+        self.out_1 = nn.Conv2d(in_channels=input_channels, out_channels=input_channels, kernel_size=(1, 1))
+        self.out_2 = nn.Conv2d(in_channels=input_channels, out_channels=input_channels, kernel_size=(1, 1))
+        self.flatten = nn.Flatten(start_dim=2)
+
+    def forward(self, x):
+        x_1 = self.flatten(self.teta(x))
+        x_1 = x_1.view(x_1.shape[0], x_1.shape[2], x_1.shape[1])
+        x_2 = self.flatten(self.fi(x))
+        x_3 = self.flatten(self.gi(x))
+        x_3 = x_3.view(x_3.shape[0], x_3.shape[2], x_3.shape[1])
+        x_1_2 = torch.matmul(x_1, x_2)
+        x_1_2_1 = F.softmax(x_1_2, dim=2)
+        x_1_2_2 = F.softmax(x_1_2, dim=1)
+
+        x_1_2_3_1 = self.out_1(
+            torch.transpose(torch.matmul(x_1_2_1, x_3), dim0=1, dim1=2).view(x.shape[0], -1, x.shape[2], x.shape[3]))
+        x_1_2_3_2 = self.out_2(
+            torch.transpose(torch.matmul(x_1_2_2, x_3), dim0=1, dim1=2).view(x.shape[0], -1, x.shape[2], x.shape[3]))
+
+        x = torch.cat([x, x], dim=1)
+        x_aggl = torch.cat([x_1_2_3_1, x_1_2_3_2], dim=1)
+
+        return F.relu(x + x_aggl)
+
+
 class CNNPolicy(nn.Module):
     """
     Agent's policy based on CNN.
@@ -42,7 +83,8 @@ class CNNPolicy(nn.Module):
 
     def __init__(self,
                  action_space_size: int,
-                 input_shape: Tuple):
+                 input_shape: Tuple,
+                 non_local: bool = False):
         """
 
         :param action_space_size: number of possible actions
@@ -51,16 +93,20 @@ class CNNPolicy(nn.Module):
         super(CNNPolicy, self).__init__()
         self.input_shape = input_shape
         self.action_space_size = action_space_size
-
+        self.non_local = non_local
+        if self.non_local:
+            self.non_local_block = NonLocalBlock(input_shape[0])
         self.feature_extractor = nn.Sequential(
-            nn.Conv2d(input_shape[0], 64, kernel_size=(3, 3), stride=(1, 1)),
+            nn.Conv2d(input_shape[0] + input_shape[0] * self.non_local, 64, kernel_size=(3, 3), stride=(1, 1)),
             nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1)),
             nn.ReLU()
         )
 
         with torch.no_grad():
-            self.feature_size = self.feature_extractor(torch.zeros(1, *self.input_shape)).view(1, -1).size(1)
+            self.feature_size = self.feature_extractor\
+                (torch.zeros(1, *(self.input_shape[0] + self.input_shape[0] * self.non_local,
+                                  self.input_shape[1], self.input_shape[2]))).view(1, -1).size(1)
 
         self.fc_head = nn.Sequential(
             nn.Linear(self.feature_size, 64),
@@ -77,7 +123,8 @@ class CNNPolicy(nn.Module):
         # If only 3 dims the batch is created adding one
         if len(x.shape) == 3:
             x = x.unsqueeze(0)
-
+        if self.non_local:
+            x = self.non_local_block(x)
         # Extract features
         x = self.feature_extractor(x)
         # Flatten and pass them to fc heads

@@ -10,7 +10,7 @@ from src.connectx.environment import convert_state_to_image, ConnectXGymEnv, sho
 def show_saliency_map(env: ConnectXGymEnv,
                       policy: torch.nn.Module,
                       num_episodes: int = 10,
-                      render_waiting_time: float = 0,
+                      render_waiting_time: float = 1,
                       device: str = 'cpu',
                       above: bool = False) -> None:
     """
