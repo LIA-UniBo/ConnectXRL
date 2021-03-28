@@ -18,6 +18,11 @@ We are interested in taking this game and explore some advancements in the field
 
 ### Bibliography
 
+Interpretable machine learning. A Guide for Making Black Box Models Explainable
+Molnar, Christoph
+2019
+https://christophm.github.io/interpretable-ml-book
+
 Reconstructing Actions To Explain Deep Reinforcement Learning.
 Xuan Chen and Zifan Wang and Yucai Fan and Bonan Jin and Piotr Mardziel and Carlee Joe-Wong and Anupam Datta.
 2021
@@ -37,3 +42,8 @@ Explainable Reinforcement Learning Through a Causal Lens.
 Prashan Madumal and Tim Miller and Liz Sonenberg and Frank Vetere.
 2019
 https://arxiv.org/abs/1905.10958
+
+Deep Constrained Q-learning 
+Gabriel Kalweit and Maria Huegle and Moritz Werling and Joschka Boedecker
+2020
+https://arxiv.org/abs/2003.09398

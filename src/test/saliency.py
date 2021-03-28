@@ -15,4 +15,4 @@ device = 'cpu'
 weight_path = './weights_2000.pt'
 agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
-show_saliency_map(env, agent, 30, device=device)
+show_saliency_map(env, agent, 'cam', 30, device=device)
