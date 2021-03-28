@@ -151,7 +151,7 @@ def show_saliency_map(env: ConnectXGymEnv,
                       policy: torch.nn.Module,
                       saliency_type: str = 'vanilla',
                       num_episodes: int = 10,
-                      render_waiting_time: float = 0,
+                      render_waiting_time: float = 1,
                       device: str = 'cpu',
                       above: bool = True) -> None:
     """

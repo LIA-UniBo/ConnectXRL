@@ -68,6 +68,7 @@ class ReplayMemory(object):
 class DQN(object):
     def __init__(self,
                  env: ConnectXGymEnv,
+                 non_local: bool = False,
                  batch_size: int = 128,
                  gamma: float = 0.99,
                  eps_start: float = 1.0,
@@ -114,8 +115,8 @@ class DQN(object):
         init_screen = convert_state_to_image(self.env.reset())
         screen_shape = (init_screen.shape[1], init_screen.shape[2], init_screen.shape[3])
 
-        self.policy_net = CNNPolicy(self.n_actions, screen_shape).to(device)
-        self.target_net = CNNPolicy(self.n_actions, screen_shape).to(device)
+        self.policy_net = CNNPolicy(self.n_actions, screen_shape, non_local=non_local).to(device)
+        self.target_net = CNNPolicy(self.n_actions, screen_shape, non_local=non_local).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         # Put target network on evaluation mode
         self.target_net.eval()
