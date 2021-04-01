@@ -78,6 +78,7 @@ class DQN(object):
                  target_update: int = 500,
                  learning_rate: float = 1e-2,
                  epochs: int = 2,
+                 constraint: bool = True,
                  device: str = 'cpu',
                  notebook: bool = False):
         """
@@ -103,6 +104,7 @@ class DQN(object):
         self.target_update = target_update
         self.epochs = epochs
         self.device = device
+        self.constraint = constraint
         self.notebook = notebook
 
         # Get number of actions from gym action space
@@ -239,7 +241,10 @@ class DQN(object):
 
             for t in count():
                 # Select and perform an action on the environment
-                action = self.select_action(screen, step_eps)
+                if self.constraint:
+                    action = self.select_constrained_action(state, screen, step_eps)
+                else:
+                    action = self.select_action(screen, step_eps)
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
                 new_screen = torch.from_numpy(convert_state_to_image(new_state)).to(self.device)
@@ -263,7 +268,7 @@ class DQN(object):
                 # Update old state and image
                 # state = new_state
                 screen = new_screen
-
+                state = new_state
                 # Perform one step of the optimization (on the target network)
                 self.optimize_model(losses)
 
@@ -358,3 +363,12 @@ class DQN(object):
         else:
             # Exploration
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
+
+    def select_constrained_action(self, state, screen, step_eps):
+        constrained_action = None
+        if not state.any():
+            constrained_action = torch.tensor([3]).unsqueeze(dim=1)
+        if constrained_action is None:
+            constrained_action = self.select_action(screen, step_eps)
+            
+        return constrained_action

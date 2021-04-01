@@ -42,7 +42,7 @@ class NonLocalBlock(nn.Module):
                  inter_channels=None,
                  mode='embedded',
                  dimension=3,
-                 bn_layer=True):
+                 bn_layer=False):
         """Implementation of Non-Local Block with 4 different pairwise functions but doesn't include subsampling trick
         args:
             in_channels: original channel size (1024 in the paper)

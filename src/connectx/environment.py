@@ -149,7 +149,6 @@ class ConnectXGymEnv(gym.Env):
             draw = False
             if all(v for v in self.obs['board']):
                 draw = True
-                print(self.obs['board'])
             # Perform the action
             self.obs, original_reward, done, _ = self.env.step(int(action))
             # Modify the reward
