@@ -146,7 +146,6 @@ class ConnectXGymEnv(gym.Env):
 
         # Check if the action is valid otherwise punish the agent
         if self.obs['board'][int(action)] == 0:
-            print(self.obs['board'])
             draw = False
             if all(v for v in self.obs['board']):
                 draw = True
