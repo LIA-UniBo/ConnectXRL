@@ -59,7 +59,7 @@ def check_second_diagonal(state, diagonal_image, target):
                 if i - 2 >= 0 and j + 3 < state.shape[1]:
                     if state[i - 1][j + 3] == 0 and state[i][j + 3] != 0:
                         return torch.tensor([j + 3]).unsqueeze(dim=1)
-                if i + 3 < state.shape[0] and j - 3 < state.shape[1]:
+                if i + 3 < state.shape[0] and state.shape[1] > j - 3 >= 0:
                     if i + 4 >= state.shape[0]:
                         if state[i + 3][j - 3] == 0:
                             return torch.tensor([j - 3]).unsqueeze(dim=1)
@@ -91,11 +91,11 @@ class Constraints(object):
         else:
             state[state == 2] = -1
             constrained_action = self.check_win_loss_horizontal(state)
-            if constrained_action is not None:
+            if constrained_action is None:
                 constrained_action = self.check_win_loss_vertical(state)
-            if constrained_action is not None:
+            if constrained_action is None:
                 constrained_action = self.check_win_loss_first_diagonal(state)
-            if constrained_action is not None:
+            if constrained_action is None:
                 constrained_action = self.check_win_loss_second_diagonal(state)
 
         return constrained_action
