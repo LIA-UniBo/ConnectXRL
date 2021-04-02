@@ -34,23 +34,39 @@ def check_horizontally(state, horizontal_image, target):
     return None
 
 
-def check_diagonally(state, diagonal_image, target):
-    constrained_action = None
+def check_first_diagonal(state, diagonal_image, target):
     for i in range(diagonal_image.shape[0]):
         for j in range(diagonal_image.shape[1]):
             if diagonal_image[i][j] == target:
                 if i - 2 >= 0 and j - 2 >= 0:
                     if state[i - 1][j - 1] == 0 and state[i][j - 1] != 0:
-                        constrained_action = torch.tensor([j - 1]).unsqueeze(dim=1)
+                        return torch.tensor([j - 1]).unsqueeze(dim=1)
                 if i + 3 < state.shape[0] and j + 3 < state.shape[1]:
-                    if i + 4 < state.shape[0]:
+                    if i + 4 >= state.shape[0]:
                         if state[i + 3][j + 3] == 0:
-                            constrained_action = torch.tensor([j + 3]).unsqueeze(dim=1)
+                            return torch.tensor([j + 3]).unsqueeze(dim=1)
                         else:
                             if state[i + 1][j + 3] != 0 and state[i + 3][j + 3] == 0:
-                                constrained_action = torch.tensor([j + 3]).unsqueeze(dim=1)
+                                return torch.tensor([j + 3]).unsqueeze(dim=1)
 
-    return constrained_action
+    return None
+
+
+def check_second_diagonal(state, diagonal_image, target):
+    for i in range(diagonal_image.shape[0]):
+        for j in range(diagonal_image.shape[1]):
+            if diagonal_image[i][j] == target:
+                if i - 2 >= 0 and j + 3 < state.shape[1]:
+                    if state[i - 1][j + 3] == 0 and state[i][j + 3] != 0:
+                        return torch.tensor([j + 3]).unsqueeze(dim=1)
+                if i + 3 < state.shape[0] and j - 3 < state.shape[1]:
+                    if i + 4 >= state.shape[0]:
+                        if state[i + 3][j - 3] == 0:
+                            return torch.tensor([j - 3]).unsqueeze(dim=1)
+                        else:
+                            if state[i + 1][j - 3] != 0 and state[i + 3][j - 3] == 0:
+                                return torch.tensor([j - 3]).unsqueeze(dim=1)
+    return None
 
 
 def check_logic(check, state, image):
@@ -79,6 +95,8 @@ class Constraints(object):
                 constrained_action = self.check_win_loss_vertical(state)
             if constrained_action is not None:
                 constrained_action = self.check_win_loss_first_diagonal(state)
+            if constrained_action is not None:
+                constrained_action = self.check_win_loss_second_diagonal(state)
 
         return constrained_action
 
@@ -97,4 +115,10 @@ class Constraints(object):
         state_diagonal = np.pad(state, [(1, 1), (1, 1)], mode='constant')
         diagonal_image = convolve2d(state_diagonal, self.diag1_kernel, mode="valid")[1:(state.shape[1] - 1),
                          1:(state.shape[1] - 1)]
-        return check_logic(check_diagonally, state, diagonal_image)
+        return check_logic(check_first_diagonal, state, diagonal_image)
+
+    def check_win_loss_second_diagonal(self, state):
+        state_diagonal = np.pad(state, [(1, 1), (1, 1)], mode='constant')
+        diagonal_image = convolve2d(state_diagonal, self.diag2_kernel, mode="valid")[1:(state.shape[1] - 1),
+                         1:(state.shape[1] - 1)]
+        return check_logic(check_second_diagonal, state, diagonal_image)
