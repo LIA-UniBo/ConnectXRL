@@ -16,6 +16,7 @@ import torch.nn.functional as F
 from IPython.core.display import clear_output
 from scipy.signal import convolve2d
 
+from src.connectx.constraints import Constraints
 from src.connectx.environment import ConnectXGymEnv, convert_state_to_image
 from src.connectx.plots import lineplot, countplot
 from src.connectx.policy import CNNPolicy
@@ -105,7 +106,7 @@ class DQN(object):
         self.target_update = target_update
         self.epochs = epochs
         self.device = device
-        self.constraint = constraint
+        self.constraints = Constraints() if constraint else None
         self.notebook = notebook
 
         # Get number of actions from gym action space
@@ -242,9 +243,10 @@ class DQN(object):
 
             for t in count():
                 # Select and perform an action on the environment
-                if self.constraint:
-                    action = self.select_constrained_action(state.squeeze(), screen, step_eps)
-                else:
+                action = None
+                if self.constraints is not None:
+                    action = self.constraints.select_constrained_action(state.squeeze())
+                if self.constraints is None or action is None:
                     action = self.select_action(screen, step_eps)
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
@@ -364,70 +366,3 @@ class DQN(object):
         else:
             # Exploration
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
-
-    def select_constrained_action(self, state, screen, step_eps):
-        if not state.any():
-            constrained_action = torch.tensor([3]).unsqueeze(dim=1)
-        else:
-            # TODO: search diagonally
-            # diag1_kernel = np.eye(4, dtype=np.uint8)
-            # diag2_kernel = np.fliplr(diag1_kernel)
-            state[state == 2] = -1
-            constrained_action = self.check_win_loss_horizontal(state)
-            if constrained_action is not None:
-                constrained_action = self.check_win_loss_vertical(state)
-        if constrained_action is None:
-            constrained_action = self.select_action(screen, step_eps)
-        print(constrained_action)
-        return constrained_action
-
-    def check_logic(self, check, state, image):
-        # Look for actions to close an opponent's horizontal victory
-        constrained_action_close = check(state, image, target=-3)
-        # Look for actions to win horizontally
-        constrained_action_win = check(state, image, target=3)
-
-        # Priority to win if possible
-        if constrained_action_win is None:
-            return constrained_action_close
-        else:
-            return constrained_action_win
-
-    def check_win_loss_horizontal(self, state):
-        state_horizontal = np.pad(state, [(0, 0), (1, 1)], mode='constant')
-        horizontal_kernel = np.array([[1, 1, 1]])
-        horizontal_image = convolve2d(state_horizontal, horizontal_kernel, mode="valid")[:, 1:(state.shape[1] - 1)]
-
-        return self.check_logic(self.check_horizontally, state, horizontal_image)
-
-    def check_win_loss_vertical(self, state):
-        state_vertical = np.pad(state, [(1, 1), (0, 0)], mode='constant')
-        vertical_kernel = np.transpose(np.array([[1, 1, 1]]))
-        vertical_image = convolve2d(state_vertical, vertical_kernel, mode="valid")[1:(state.shape[1] - 1), :]
-
-        return self.check_logic(self.check_vertically, state, vertical_image)
-
-    def check_vertically(self, state, vertical_image, target):
-        constrained_action = None
-        for i in range(vertical_image.shape[0]):
-            for j in range(vertical_image.shape[1]):
-                if vertical_image[i][j] == target:
-                    if i - 2 >= 0:
-                        if state[i - 2][j] != 0:
-                            constrained_action = torch.tensor([i - 2]).unsqueeze(dim=1)
-
-        return constrained_action
-
-    def check_horizontally(self, state, horizontal_image, target):
-        constrained_action = None
-        for i in range(horizontal_image.shape[0]):
-            for j in range(horizontal_image.shape[1]):
-                if horizontal_image[i][j] == target:
-                    if j - 2 >= 0:
-                        if state[i - 1][j - 2] != 0:
-                            constrained_action = torch.tensor([j - 2]).unsqueeze(dim=1)
-                    if j + 2 < state.shape[1]:
-                        if state[i - 1][j + 2] != 0:
-                            constrained_action = torch.tensor([j - 2]).unsqueeze(dim=1)
-
-        return constrained_action
