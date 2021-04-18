@@ -14,14 +14,13 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 from IPython.core.display import clear_output
-from scipy.signal import convolve2d
 
-from src.connectx.constraints import Constraints
+from src.connectx.constraints import Constraints, ConstraintType
 from src.connectx.environment import ConnectXGymEnv, convert_state_to_image
 from src.connectx.plots import lineplot, countplot
 from src.connectx.policy import CNNPolicy
 
-Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
+Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'board'))
 
 
 class ReplayMemory(object):
@@ -80,7 +79,7 @@ class DQN(object):
                  target_update: int = 500,
                  learning_rate: float = 1e-2,
                  epochs: int = 2,
-                 constraint: bool = True,
+                 constraint: ConstraintType = ConstraintType.LOGIC_TRAIN,
                  device: str = 'cpu',
                  notebook: bool = False):
         """
@@ -106,7 +105,7 @@ class DQN(object):
         self.target_update = target_update
         self.epochs = epochs
         self.device = device
-        self.constraints = Constraints() if constraint else None
+        self.constraints = Constraints(constraint) if constraint else None
         self.notebook = notebook
 
         # Get number of actions from gym action space
@@ -159,10 +158,26 @@ class DQN(object):
             action_batch = torch.cat(batch.action)
             reward_batch = torch.cat(batch.reward)
 
-            # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-            # columns of actions taken. These are the actions which would've been taken
-            # for each batch state according to policy_net
-            state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+            # Compute Q(s_t, a) - the model computes Q(s_t)
+            state_action_values = self.policy_net(state_batch)
+
+            # SBR regularization term
+            if self.constraints.type is ConstraintType.SBR:
+
+                # print(batch.board[0].squeeze())
+
+                constraint_action = torch.stack([self.constraints.select_constrained_action(b.squeeze())
+                                                 for b in batch.board])
+                # TODO: change
+                sbr_coeff = 0.9
+
+                sbr_term = sbr_coeff * (F.softmax(state_action_values, dim=1).gather(1, action_batch) -
+                                        constraint_action.gather(1, action_batch)) ** 2
+                # TODO: use
+                # print(sbr_term[0])
+
+            # Select the columns of the actions taken
+            state_action_values = state_action_values.gather(1, action_batch)
 
             # Compute V(s_{t+1}) for all next states.
             # Expected values of actions for non_final_next_states are computed based
@@ -244,10 +259,23 @@ class DQN(object):
             for t in count():
                 # Select and perform an action on the environment
                 action = None
-                if self.constraints is not None:
+                constrained_action_performed = True
+
+                # If constraints are enabled use them else if they are not enabled or there are multiple valid actions
+                # exploit the policy
+                if self.constraints is not None and self.constraints.type in [ConstraintType.LOGIC_PURE,
+                                                                              ConstraintType.LOGIC_TRAIN]:
                     action = self.constraints.select_constrained_action(state.squeeze())
-                if self.constraints is None or action is None:
+                if self.constraints is None \
+                        or (self.constraints.type in [ConstraintType.LOGIC_PURE,
+                                                      ConstraintType.LOGIC_TRAIN] and action.sum().item() != 1):
                     action = self.select_action(screen, step_eps)
+                    constrained_action_performed = False
+
+                if constrained_action_performed:
+                    # Select action suggested by constraints
+                    action = action.max(0)[1].view(1, 1)
+
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
                 new_screen = torch.from_numpy(convert_state_to_image(new_state)).to(self.device)
@@ -264,9 +292,9 @@ class DQN(object):
                         self.memory.memory[self.memory.position - 1]._replace(reward=reward)
                         push = False
 
-                # Store the transition in memory
-                if push:
-                    self.memory.push(screen, action, new_screen, reward)
+                # Store the transition in memory if match has not ended and constrained action is from LOGIC_PURE method
+                if push and not (constrained_action_performed and self.constraints.type is ConstraintType.LOGIC_PURE):
+                    self.memory.push(screen, action, new_screen, reward, state)
 
                 # Update old state and image
                 # state = new_state

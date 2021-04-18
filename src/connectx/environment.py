@@ -114,12 +114,16 @@ class ConnectXGymEnv(gym.Env):
         self.obs = self.env.reset()
         return np.array(self.obs['board']).reshape(self.rows, self.columns, 1)
 
-    def reward_shaping(self, original_reward, done, draw) -> float:
+    def reward_shaping(self,
+                       original_reward: int,
+                       done: bool,
+                       draw: bool) -> float:
         """
         Modifies original rewards.
 
         :param original_reward: reward from the Kaggle environment
         :param done: True if the game has ended
+        :param draw: True if the game has ended in a draw
         :return: the modified reward
         """
         if original_reward == 1:

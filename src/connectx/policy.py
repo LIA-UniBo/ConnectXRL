@@ -24,6 +24,7 @@ def dqn_agent(observation: dict,
     model.load_state_dict(torch.load(configuration.weights_path))
     model.eval()
 
+    # TODO: Add LOGIC_PURE decision
     col = model(torch.from_numpy(convert_state_to_image(observation.board)))
 
     # Check if selected column is valid
