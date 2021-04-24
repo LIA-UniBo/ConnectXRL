@@ -31,30 +31,32 @@ def check_vertically(state, vertical_image, target):
     for i in range(vertical_image.shape[0]):
         for j in range(vertical_image.shape[1]):
             if vertical_image[i][j] == target:
-                if i - 1 >= 0:
-                    if state[i - 1][j] == 0:
+                if i >= 2:
+                    if state[i - 2][j] == 0:
                         return torch.tensor([j]).unsqueeze(dim=1)
     return None
 
 
+# 1111111 -> 011111110 -> 2333332
 def check_horizontally(state, horizontal_image, target):
+    last_column_index = state.shape[1] - 1
     for i in range(horizontal_image.shape[0]):
         for j in range(horizontal_image.shape[1]):
             if horizontal_image[i][j] == target:
-                if j - 1 >= 0:
-                    if i + 1 >= state.shape[0]:
-                        if state[i][j - 1] == 0:
-                            return torch.tensor([j - 1]).unsqueeze(dim=1)
+                if j >= 2:
+                    if i < state.shape[0] - 1:
+                        if state[i][j - 2] == 0 and state[i + 1][j - 2] != 0:
+                            return torch.tensor([j - 2]).unsqueeze(dim=1)
                     else:
-                        if state[i + 1][j - 1] == 0:
-                            return torch.tensor([j - 1]).unsqueeze(dim=1)
-                if j + 3 < state.shape[1]:
-                    if i + 1 >= state.shape[0]:
-                        if state[i][j + 3] == 0:
-                            return torch.tensor([j + 3]).unsqueeze(dim=1)
+                        if state[i][j - 2] == 0:
+                            return torch.tensor([j - 2]).unsqueeze(dim=1)
+                if j <= last_column_index - 2:
+                    if i < state.shape[0] - 1:
+                        if state[i][j + 2] == 0 and state[i + 1][j + 2] != 0:
+                            return torch.tensor([j + 2]).unsqueeze(dim=1)
                     else:
-                        if state[i + 1][j + 3] == 0:
-                            return torch.tensor([j + 3]).unsqueeze(dim=1)
+                        if state[i][j + 2] == 0:
+                            return torch.tensor([j + 2]).unsqueeze(dim=1)
     return None
 
 
@@ -172,9 +174,10 @@ class Constraints(object):
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
         round or to prevent the opponent from winning in the following round.
         """
-
+        # Example of padding plus convolution
+        # 011111110 -> 2333332
         state_horizontal = np.pad(state, [(0, 0), (1, 1)], mode='constant')
-        horizontal_image = convolve2d(state_horizontal, self.horizontal_kernel, mode="valid")[:, 1:(state.shape[1] - 1)]
+        horizontal_image = convolve2d(state_horizontal, self.horizontal_kernel, mode="valid")
 
         return check_logic(check_horizontally, state, horizontal_image)
 
@@ -186,9 +189,15 @@ class Constraints(object):
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
         round or to prevent the opponent from winning in the following round.
         """
-
+        # Example of padding plus convolution
+        # 0     0
+        # 0     0
+        # 0  -> 1
+        # 1     2
+        # 1     3
+        # 1     2
         state_vertical = np.pad(state, [(1, 1), (0, 0)], mode='constant')
-        vertical_image = convolve2d(state_vertical, self.vertical_kernel, mode="valid")[1:(state.shape[1] - 1), :]
+        vertical_image = convolve2d(state_vertical, self.vertical_kernel, mode="valid")
         return check_logic(check_vertically, state, vertical_image)
 
     def check_win_loss_first_diagonal(self, state: np.array) -> Optional[int]:
