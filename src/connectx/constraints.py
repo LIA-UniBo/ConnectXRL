@@ -44,9 +44,9 @@ def check_vertically(state: np.array,
             # If there is a critical situation
             if vertical_image[i][j] == target:
                 # If the column is not full
-                if i - 1 >= 0:
+                if i >= 2:
                     # Check if there is space above the critical situation
-                    if state[i - 1][j] == 0:
+                    if state[i - 2][j] == 0:
                         return torch.tensor([j]).unsqueeze(dim=1)
     return None
 
@@ -63,38 +63,59 @@ def check_horizontally(state: np.array,
     :param target: positive number if it is checking a victory, alternatively is negative
     :return: critical position if found else None
     """
+    last_column_index = state.shape[1] - 1
+    # Rows are counted starting from above the board
+    first_row_index = state.shape[0] - 1
     for i in range(horizontal_image.shape[0]):
         for j in range(horizontal_image.shape[1]):
             # If there is a critical situation
             if horizontal_image[i][j] == target:
                 # If you are not in the left border check on the left
                 # e.g.: Avoid checking on the left in |1|1|1|0|0|0|0|
-                if j - 1 >= 0:
+                if j >= 2:
                     # Check if there is row below (you are not in the first row)
-                    if i + 1 >= state.shape[0]:
+                    if i < first_row_index:
                         # If the cell on the left is free and the cell below it is not free
                         # e.g.:
                         # |0|1|1|1|0|0|0|
                         # |1|2|1|2|0|0|0|
-                        if state[i][j - 1] == 0:
-                            return torch.tensor([j - 1]).unsqueeze(dim=1)
+                        if state[i][j - 2] == 0 and state[i + 1][j - 2] != 0:
+                            return torch.tensor([j - 2]).unsqueeze(dim=1)
                     else:
                         # If the cell on the left is free
                         # e.g.: |0|1|1|1|0|0|0|
-                        if state[i + 1][j - 1] == 0:
-                            return torch.tensor([j - 1]).unsqueeze(dim=1)
+                        if state[i][j - 2] == 0:
+                            return torch.tensor([j - 2]).unsqueeze(dim=1)
                 # If you are not in the right border check on the right
                 # e.g.: Avoid checking on the right in |0|0|0|0|1|1|1|
-                if j + 3 < state.shape[1]:
+                if j <= last_column_index - 2:
                     # Check if there is row below (you are not in the first row)
-                    if i + 1 >= state.shape[0]:
+                    if i < first_row_index:
                         # If the cell on the right is free and the cell below it is not free
-                        if state[i][j + 3] == 0:
-                            return torch.tensor([j + 3]).unsqueeze(dim=1)
+                        if state[i][j + 2] == 0 and state[i + 1][j + 2] != 0:
+                            return torch.tensor([j + 2]).unsqueeze(dim=1)
                     else:
                         # If the cell on the right is free
-                        if state[i + 1][j + 3] == 0:
-                            return torch.tensor([j + 3]).unsqueeze(dim=1)
+                        if state[i][j + 2] == 0:
+                            return torch.tensor([j + 2]).unsqueeze(dim=1)
+
+    # Check each row of the original board
+    pattern1 = np.array([1, 0, 1, 1]) * (target / abs(target))
+    pattern2 = np.array([1, 1, 0, 1]) * (target / abs(target))
+
+    for i, row in enumerate(state):
+        # Check if there is a 1011 or 1101 pattern in the board
+        for j in range(row.shape[0] - 3):
+            if (row[j:j + 4] == pattern1).all() or (row[j:j + 4] == pattern2).all():
+                # Found the empty index
+                empty_index = (j + 2) if state[i][j + 2] == 0 else (j + 1)
+                # Check if it is the first row
+                if i == first_row_index:
+                    return torch.tensor([empty_index]).unsqueeze(dim=1)
+                # Else check if the row below has the cell not empty
+                elif state[i + 1][empty_index] != 0:
+                    return torch.tensor([empty_index]).unsqueeze(dim=1)
+
     return None
 
 
@@ -232,9 +253,10 @@ class Constraints(object):
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
         round or to prevent the opponent from winning in the following round.
         """
-
+        # Example of padding plus convolution
+        # 011111110 -> 2333332
         state_horizontal = np.pad(state, [(0, 0), (1, 1)], mode='constant')
-        horizontal_image = convolve2d(state_horizontal, self.horizontal_kernel, mode="valid")[:, 1:(state.shape[1] - 1)]
+        horizontal_image = convolve2d(state_horizontal, self.horizontal_kernel, mode="valid")
 
         return check_logic(check_horizontally, state, horizontal_image)
 
@@ -246,9 +268,15 @@ class Constraints(object):
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
         round or to prevent the opponent from winning in the following round.
         """
-
+        # Example of padding plus convolution
+        # 0     0
+        # 0     0
+        # 0 --> 1
+        # 1     2
+        # 1     3
+        # 1     2
         state_vertical = np.pad(state, [(1, 1), (0, 0)], mode='constant')
-        vertical_image = convolve2d(state_vertical, self.vertical_kernel, mode="valid")[1:(state.shape[1] - 1), :]
+        vertical_image = convolve2d(state_vertical, self.vertical_kernel, mode="valid")
         return check_logic(check_vertically, state, vertical_image)
 
     def check_win_loss_first_diagonal(self, state: np.array) -> Optional[int]:
