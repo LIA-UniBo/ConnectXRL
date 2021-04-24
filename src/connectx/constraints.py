@@ -179,11 +179,19 @@ class Constraints(object):
                 if constrained_action is None:
                     constrained_action = self.check_win_loss_diagonals(state, target)
 
+        # Check invalid actions
+        invalid = torch.tensor([0 if state[0][j] != 0 else 1 for j in range(state.shape[1])])
+        if constrained_action is not None and invalid[constrained_action] == 0:
+            raise RuntimeError('Invalid action corresponds to a constrained action!')
+
         if constrained_action is None:
-            constrained_action = torch.zeros(state.shape[1])
+            constrained_action = torch.ones(state.shape[1])
         else:
             constrained_action = torch.tensor([1 if i == constrained_action else 0 for i in range(state.shape[1])])
-        return constrained_action
+
+        a = constrained_action * invalid
+        return constrained_action * invalid if self.type not in (ConstraintType.LOGIC_PURE,
+                                                                 ConstraintType.LOGIC_TRAIN) else constrained_action
 
     def check_win_loss_horizontal(self, state: np.array, target: int) -> Optional[int]:
         """
