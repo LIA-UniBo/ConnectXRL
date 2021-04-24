@@ -162,7 +162,7 @@ class DQN(object):
             state_action_values = self.policy_net(state_batch)
 
             # SBR regularization term
-            if self.constraints.type is ConstraintType.SBR:
+            if self.constraints.c_type is ConstraintType.SBR:
 
                 # print(batch.board[0].squeeze())
 
@@ -263,12 +263,12 @@ class DQN(object):
 
                 # If constraints are enabled use them else if they are not enabled or there are multiple valid actions
                 # exploit the policy
-                if self.constraints is not None and self.constraints.type in [ConstraintType.LOGIC_PURE,
-                                                                              ConstraintType.LOGIC_TRAIN]:
+                if self.constraints is not None and self.constraints.c_type in [ConstraintType.LOGIC_PURE,
+                                                                                ConstraintType.LOGIC_TRAIN]:
                     action = self.constraints.select_constrained_action(state.squeeze())
                 if self.constraints is None \
-                        or (self.constraints.type in [ConstraintType.LOGIC_PURE,
-                                                      ConstraintType.LOGIC_TRAIN] and action.sum().item() != 1):
+                        or (self.constraints.c_type in [ConstraintType.LOGIC_PURE,
+                                                        ConstraintType.LOGIC_TRAIN] and action.sum().item() != 1):
                     action = self.select_action(screen, step_eps)
                     constrained_action_performed = False
 

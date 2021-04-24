@@ -108,7 +108,7 @@ def check_horizontally(state: np.array,
     for i, row in enumerate(state):
         # Check if there is a 1011 or 1101 pattern in the board
         for j in range(row.shape[0] - 3):
-            if (row[j:j + 4] == pattern1).all() or (row[j:j + 4] == pattern2).all():
+            if np.all(row[j:j + 4] == pattern1) or np.all(row[j:j + 4] == pattern2):
                 # Find the empty index
                 empty_index = (j + 2) if state[i][j + 2] == 0 else (j + 1)
                 # Check if it is the first row
@@ -126,15 +126,15 @@ class Constraints(object):
     Class which encapsulates the constraint logics.
     """
 
-    def __init__(self, type: ConstraintType, player_number: int = 1):
+    def __init__(self, c_type: ConstraintType, player_number: int = 1):
         """
 
-        :param type: the constraint type represented
+        :param c_type: the constraint type represented
         :param player_number: the number of the current player (the opponent will be 2 if the current is 1 and vice
         versa)
         """
         # Define kernels used in the convolutions to detect the critical situations
-        self.type = type
+        self.c_type = c_type
 
         self.player_number = player_number
 
@@ -189,9 +189,8 @@ class Constraints(object):
         else:
             constrained_action = torch.tensor([1 if i == constrained_action else 0 for i in range(state.shape[1])])
 
-        a = constrained_action * invalid
-        return constrained_action * invalid if self.type not in (ConstraintType.LOGIC_PURE,
-                                                                 ConstraintType.LOGIC_TRAIN) else constrained_action
+        return constrained_action * invalid if self.c_type not in (ConstraintType.LOGIC_PURE,
+                                                                   ConstraintType.LOGIC_TRAIN) else constrained_action
 
     def check_win_loss_horizontal(self, state: np.array, target: int) -> Optional[int]:
         """
@@ -248,7 +247,7 @@ class Constraints(object):
             k = k * int(target / abs(target))
             for i in range(state.shape[0] - k_w + 1):
                 for j in range(state.shape[1] - k_h + 1):
-                    if (np.diag(state[i:i + k_w, j:j + k_h]) == np.diag(k)).all():
+                    if np.all((np.diag(state[i:i + k_w, j:j + k_h]) == np.diag(k))):
                         # Empty cell position is based on the ordering of the kernels and on the square nature of the
                         # kernels
 
@@ -267,7 +266,7 @@ class Constraints(object):
             k = k * int(target / abs(target))
             for i in range(state.shape[0] - k_w + 1):
                 for j in range(state.shape[1] - k_h + 1):
-                    if (np.diag(np.fliplr(state[i:i + k_w, j:j + k_h])) == np.diag(np.fliplr(k))).all():
+                    if np.all((np.diag(np.fliplr(state[i:i + k_w, j:j + k_h])) == np.diag(np.fliplr(k)))):
                         # Empty cell position is based on the ordering of the kernels and on the square nature of the
                         # kernels
                         empty_cell = k_h - k_i
