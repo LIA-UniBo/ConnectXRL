@@ -27,38 +27,89 @@ class ConstraintType(Enum):
     CDQN = 4
 
 
-def check_vertically(state, vertical_image, target):
+def check_vertically(state: np.array,
+                     vertical_image: np.array,
+                     target: int) -> Optional[int]:
+    """
+    Check possible wins or losts along columns of the board.
+
+    :param state: original board
+    :param vertical_image: convolved board's image using a vertical kernel on a padded image (the original height is
+    maintained)
+    :param target: positive number if it is checking a victory, alternatively is negative
+    :return: critical position if found else None
+    """
     for i in range(vertical_image.shape[0]):
         for j in range(vertical_image.shape[1]):
+            # If there is a critical situation
             if vertical_image[i][j] == target:
+                # If the column is not full
                 if i - 1 >= 0:
+                    # Check if there is space above the critical situation
                     if state[i - 1][j] == 0:
                         return torch.tensor([j]).unsqueeze(dim=1)
     return None
 
 
-def check_horizontally(state, horizontal_image, target):
+def check_horizontally(state: np.array,
+                       horizontal_image: np.array,
+                       target: int) -> Optional[int]:
+    """
+    Check possible wins or losts along rows of the board.
+
+    :param state: original board
+    :param horizontal_image: convolved board's image using a horizontal kernel on a padded image (the original width is
+    maintained)
+    :param target: positive number if it is checking a victory, alternatively is negative
+    :return: critical position if found else None
+    """
     for i in range(horizontal_image.shape[0]):
         for j in range(horizontal_image.shape[1]):
+            # If there is a critical situation
             if horizontal_image[i][j] == target:
+                # If you are not in the left border check on the left
+                # e.g.: Avoid checking on the left in |1|1|1|0|0|0|0|
                 if j - 1 >= 0:
+                    # Check if there is row below (you are not in the first row)
                     if i + 1 >= state.shape[0]:
+                        # If the cell on the left is free and the cell below it is not free
+                        # e.g.:
+                        # |0|1|1|1|0|0|0|
+                        # |1|2|1|2|0|0|0|
                         if state[i][j - 1] == 0:
                             return torch.tensor([j - 1]).unsqueeze(dim=1)
                     else:
+                        # If the cell on the left is free
+                        # e.g.: |0|1|1|1|0|0|0|
                         if state[i + 1][j - 1] == 0:
                             return torch.tensor([j - 1]).unsqueeze(dim=1)
+                # If you are not in the right border check on the right
+                # e.g.: Avoid checking on the right in |0|0|0|0|1|1|1|
                 if j + 3 < state.shape[1]:
+                    # Check if there is row below (you are not in the first row)
                     if i + 1 >= state.shape[0]:
+                        # If the cell on the right is free and the cell below it is not free
                         if state[i][j + 3] == 0:
                             return torch.tensor([j + 3]).unsqueeze(dim=1)
                     else:
+                        # If the cell on the right is free
                         if state[i + 1][j + 3] == 0:
                             return torch.tensor([j + 3]).unsqueeze(dim=1)
     return None
 
 
-def check_first_diagonal(state, diagonal_image, target):
+def check_first_diagonal(state: np.array,
+                         diagonal_image: np.array,
+                         target: int):
+    """
+    Check possible wins or losts along the diagonal (\\) of the board
+
+    :param state: original board
+    :param diagonal_image: convolved board's image using an eye kernel on a padded image (the original height ad width
+    are maintained)
+    :param target: positive number if it is checking a victory, alternatively is negative
+    :return: critical position if found else None
+    """
     for i in range(diagonal_image.shape[0]):
         for j in range(diagonal_image.shape[1]):
             if diagonal_image[i][j] == target:
@@ -77,6 +128,15 @@ def check_first_diagonal(state, diagonal_image, target):
 
 
 def check_second_diagonal(state, diagonal_image, target):
+    """
+    Check possible wins or losts along the diagonal (\\) of the board
+
+    :param state: original board
+    :param diagonal_image: convolved board's image using an eye kernel on a padded image (the original height ad width
+    are maintained)
+    :param target: positive number if it is checking a victory, alternatively is negative
+    :return: critical position if found else None
+    """
     for i in range(diagonal_image.shape[0]):
         for j in range(diagonal_image.shape[1]):
             if diagonal_image[i][j] == target:
@@ -193,7 +253,7 @@ class Constraints(object):
 
     def check_win_loss_first_diagonal(self, state: np.array) -> Optional[int]:
         """
-        Check the board \\ diagonals.
+        Check the board // diagonals.
 
         :param state: the board as a bidimensional array
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
@@ -208,7 +268,7 @@ class Constraints(object):
 
     def check_win_loss_second_diagonal(self, state: np.array) -> Optional[int]:
         """
-        Check the board / diagonals.
+        Check the board \\ diagonals.
 
         :param state: the board as a bidimensional array
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
