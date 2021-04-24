@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional, Callable
+from typing import Optional
 
 import torch
 from scipy.signal import convolve2d
@@ -12,11 +12,13 @@ class ConstraintType(Enum):
     """
 
     # The logic strategy decouples the logical and the learnt actions. The agent encapsulates a logical process to
-    # solve particular situations.
+    # solve particular situations. It only supports single action decisions, namely the logic is not able to decide or
+    # help deciding between multiple possible actions (the network is used in that case).
     LOGIC_PURE = 1
 
     # The logic process is active only during training, in order to help the agent learning a better policy. At
-    # inference time the agent will only use the learnt policy.
+    # inference time the agent will only use the learnt policy. It only supports single action decisions, namely the
+    # logic is not able to decide or help deciding between multiple possible actions (the network is used in that case).
     LOGIC_TRAIN = 2
 
     # The logic is used to produce vectors used to regularize the loss function (Semantic Based Regularization)
@@ -47,7 +49,7 @@ def check_vertically(state: np.array,
                 if i >= 2:
                     # Check if there is space above the critical situation
                     if state[i - 2][j] == 0:
-                        return torch.tensor([j]).unsqueeze(dim=1)
+                        return j
     return None
 
 
@@ -80,12 +82,12 @@ def check_horizontally(state: np.array,
                         # |0|1|1|1|0|0|0|
                         # |1|2|1|2|0|0|0|
                         if state[i][j - 2] == 0 and state[i + 1][j - 2] != 0:
-                            return torch.tensor([j - 2]).unsqueeze(dim=1)
+                            return j - 2
                     else:
                         # If the cell on the left is free
                         # e.g.: |0|1|1|1|0|0|0|
                         if state[i][j - 2] == 0:
-                            return torch.tensor([j - 2]).unsqueeze(dim=1)
+                            return j - 2
                 # If you are not in the right border check on the right
                 # e.g.: Avoid checking on the right in |0|0|0|0|1|1|1|
                 if j <= last_column_index - 2:
@@ -93,11 +95,11 @@ def check_horizontally(state: np.array,
                     if i < first_row_index:
                         # If the cell on the right is free and the cell below it is not free
                         if state[i][j + 2] == 0 and state[i + 1][j + 2] != 0:
-                            return torch.tensor([j + 2]).unsqueeze(dim=1)
+                            return j + 2
                     else:
                         # If the cell on the right is free
                         if state[i][j + 2] == 0:
-                            return torch.tensor([j + 2]).unsqueeze(dim=1)
+                            return j + 2
 
     # Check each row of the original board
     pattern1 = np.array([1, 0, 1, 1]) * (target / abs(target))
@@ -107,92 +109,16 @@ def check_horizontally(state: np.array,
         # Check if there is a 1011 or 1101 pattern in the board
         for j in range(row.shape[0] - 3):
             if (row[j:j + 4] == pattern1).all() or (row[j:j + 4] == pattern2).all():
-                # Found the empty index
+                # Find the empty index
                 empty_index = (j + 2) if state[i][j + 2] == 0 else (j + 1)
                 # Check if it is the first row
                 if i == first_row_index:
-                    return torch.tensor([empty_index]).unsqueeze(dim=1)
+                    return empty_index
                 # Else check if the row below has the cell not empty
                 elif state[i + 1][empty_index] != 0:
-                    return torch.tensor([empty_index]).unsqueeze(dim=1)
+                    return empty_index
 
     return None
-
-
-def check_first_diagonal(state: np.array,
-                         diagonal_image: np.array,
-                         target: int):
-    """
-    Check possible wins or losts along the diagonal (\\) of the board
-
-    :param state: original board
-    :param diagonal_image: convolved board's image using an eye kernel on a padded image (the original height ad width
-    are maintained)
-    :param target: positive number if it is checking a victory, alternatively is negative
-    :return: critical position if found else None
-    """
-    for i in range(diagonal_image.shape[0]):
-        for j in range(diagonal_image.shape[1]):
-            if diagonal_image[i][j] == target:
-                if i - 2 >= 0 and j - 2 >= 0:
-                    if state[i - 1][j - 1] == 0 and state[i][j - 1] != 0:
-                        return torch.tensor([j - 1]).unsqueeze(dim=1)
-                if i + 3 < state.shape[0] and j + 3 < state.shape[1]:
-                    if i + 4 >= state.shape[0]:
-                        if state[i + 3][j + 3] == 0:
-                            return torch.tensor([j + 3]).unsqueeze(dim=1)
-                        else:
-                            if state[i + 1][j + 3] != 0 and state[i + 3][j + 3] == 0:
-                                return torch.tensor([j + 3]).unsqueeze(dim=1)
-
-    return None
-
-
-def check_second_diagonal(state, diagonal_image, target):
-    """
-    Check possible wins or losts along the diagonal (\\) of the board
-
-    :param state: original board
-    :param diagonal_image: convolved board's image using an eye kernel on a padded image (the original height ad width
-    are maintained)
-    :param target: positive number if it is checking a victory, alternatively is negative
-    :return: critical position if found else None
-    """
-    for i in range(diagonal_image.shape[0]):
-        for j in range(diagonal_image.shape[1]):
-            if diagonal_image[i][j] == target:
-                if i - 2 >= 0 and j + 3 < state.shape[1]:
-                    if state[i - 1][j + 3] == 0 and state[i][j + 3] != 0:
-                        return torch.tensor([j + 3]).unsqueeze(dim=1)
-                if i + 3 < state.shape[0] and state.shape[1] > j - 3 >= 0:
-                    if i + 4 >= state.shape[0]:
-                        if state[i + 3][j - 3] == 0:
-                            return torch.tensor([j - 3]).unsqueeze(dim=1)
-                        else:
-                            if state[i + 1][j - 3] != 0 and state[i + 3][j - 3] == 0:
-                                return torch.tensor([j - 3]).unsqueeze(dim=1)
-    return None
-
-
-def check_logic(check: Callable,
-                state: np.array,
-                image: np.array) -> Optional[int]:
-    """
-    First whether the player is about to win otherwise repeat the process for the opponent in order to find a
-    constrained action to perform.
-
-    :param check: function used to check
-    :param state: the board as a bidimensional array
-    :param image: the board transformed by convolutions used by the check function
-    :return: None if no critical situations are spotted otherwise the action the player must take to win in this
-    round or to prevent the opponent from winning in the following round.
-    """
-    constrained_action_win = check(state, image, target=3)
-    # Priority to win if possible
-    if constrained_action_win is None:
-        return check(state, image, target=-3)
-    else:
-        return constrained_action_win
 
 
 class Constraints(object):
@@ -200,20 +126,29 @@ class Constraints(object):
     Class which encapsulates the constraint logics.
     """
 
-    def __init__(self, type: ConstraintType):
+    def __init__(self, type: ConstraintType, player_number: int = 1):
         """
 
         :param type: the constraint type represented
+        :param player_number: the number of the current player (the opponent will be 2 if the current is 1 and vice
+        versa)
         """
-
-        # TODO: Add info on the player (1 or 2?)
         # Define kernels used in the convolutions to detect the critical situations
         self.type = type
 
+        self.player_number = player_number
+
         self.horizontal_kernel = np.array([[1, 1, 1]])
         self.vertical_kernel = np.transpose(self.horizontal_kernel)
-        self.diag1_kernel = np.eye(3, dtype=np.uint8)
-        self.diag2_kernel = np.fliplr(self.diag1_kernel)
+
+        self.diag1_kernels = []
+        self.diag2_kernels = []
+
+        for k in range(4):
+            # Do not change the order of the kernels, they must have a diagonal structure
+            kernel = [[1 if i == j and j != k else 0 for j in range(4)] for i in range(4)]
+            self.diag1_kernels.append(np.vstack(kernel))
+            self.diag2_kernels.insert(0, np.fliplr(self.diag1_kernels[-1]))
 
     def select_constrained_action(self, state: np.array) -> torch.Tensor:
         """
@@ -223,88 +158,116 @@ class Constraints(object):
         :return: a tensor of 1 and 0 representing respectively actions which may lead to secure or insecure situations.
         """
 
+        original_state = np.copy(state)
         state = np.copy(state)
+        state[original_state == self.player_number] = 1
+        state[original_state == (2 if self.player_number == 1 else 1)] = -1
+
+        constrained_action = None
 
         # If the board is empty the player is the first one and should start in the middle of the board
         if not state.any():
-            constrained_action = torch.tensor([3]).unsqueeze(dim=1)
-        else:
-            state[state == 2] = -1
-            constrained_action = self.check_win_loss_horizontal(state)
-            if constrained_action is None:
-                constrained_action = self.check_win_loss_vertical(state)
-            if constrained_action is None:
-                constrained_action = self.check_win_loss_first_diagonal(state)
-            if constrained_action is None:
-                constrained_action = self.check_win_loss_second_diagonal(state)
+            constrained_action = 3
 
-        # TODO: workaround
+        # Check first if it is possible to win then if there is a possibility to lose
+        for target in [3, -3]:
+            # If action hasn't been decided yet
+            if constrained_action is None:
+                constrained_action = self.check_win_loss_horizontal(state, target)
+                if constrained_action is None:
+                    constrained_action = self.check_win_loss_vertical(state, target)
+                if constrained_action is None:
+                    constrained_action = self.check_win_loss_diagonals(state, target)
+
         if constrained_action is None:
             constrained_action = torch.zeros(state.shape[1])
         else:
             constrained_action = torch.tensor([1 if i == constrained_action else 0 for i in range(state.shape[1])])
         return constrained_action
 
-    def check_win_loss_horizontal(self, state: np.array) -> Optional[int]:
+    def check_win_loss_horizontal(self, state: np.array, target: int) -> Optional[int]:
         """
         Chack the board rows.
 
         :param state: the board as a bidimensional array
+        :param target: positive number if it is checking a victory, alternatively is negative
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
         round or to prevent the opponent from winning in the following round.
         """
         # Example of padding plus convolution
-        # 011111110 -> 2333332
+        # |     ...     |    |     ...     |
+        # |1|1|1|1|1|1|1| -> |2|3|3|3|3|3|2|
         state_horizontal = np.pad(state, [(0, 0), (1, 1)], mode='constant')
         horizontal_image = convolve2d(state_horizontal, self.horizontal_kernel, mode="valid")
 
-        return check_logic(check_horizontally, state, horizontal_image)
+        return check_horizontally(state, horizontal_image, target)
 
-    def check_win_loss_vertical(self, state: np.array) -> Optional[int]:
+    def check_win_loss_vertical(self, state: np.array, target: int) -> Optional[int]:
         """
         Check the board columns.
 
         :param state: the board as a bidimensional array
+        :param target: positive number if it is checking a victory, alternatively is negative
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
         round or to prevent the opponent from winning in the following round.
         """
         # Example of padding plus convolution
-        # 0     0
-        # 0     0
-        # 0 --> 1
-        # 1     2
-        # 1     3
-        # 1     2
+        # |0| ..       |0| ..
+        # |0| ..       |0| ..
+        # |0| ..  -->  |1| ..
+        # |1| ..       |2| ..
+        # |1| ..       |3| ..
+        # |1| ..       |2| ..
         state_vertical = np.pad(state, [(1, 1), (0, 0)], mode='constant')
         vertical_image = convolve2d(state_vertical, self.vertical_kernel, mode="valid")
-        return check_logic(check_vertically, state, vertical_image)
+        return check_vertically(state, vertical_image, target)
 
-    def check_win_loss_first_diagonal(self, state: np.array) -> Optional[int]:
+    def check_win_loss_diagonals(self, state: np.array, target: int) -> Optional[int]:
         """
-        Check the board // diagonals.
+        Check the board diagonals.
 
         :param state: the board as a bidimensional array
+        :param target: positive number if it is checking a victory, alternatively is negative
         :return: None if no critical situations are spotted otherwise the action the player must take to win in this
         round or to prevent the opponent from winning in the following round.
         """
 
-        state_diagonal = np.pad(state, [(1, 1), (1, 1)], mode='constant')
-        diagonal_image = convolve2d(state_diagonal,
-                                    self.diag1_kernel,
-                                    mode="valid")[1:(state.shape[1] - 1), 1:(state.shape[1] - 1)]
-        return check_logic(check_first_diagonal, state, diagonal_image)
+        # Check diagonal
+        for k_i, k in enumerate(self.diag1_kernels):
+            k_w = k.shape[0]
+            k_h = k.shape[1]
 
-    def check_win_loss_second_diagonal(self, state: np.array) -> Optional[int]:
-        """
-        Check the board \\ diagonals.
+            k = k * int(target / abs(target))
+            for i in range(state.shape[0] - k_w + 1):
+                for j in range(state.shape[1] - k_h + 1):
+                    if (np.diag(state[i:i + k_w, j:j + k_h]) == np.diag(k)).all():
+                        # Empty cell position is based on the ordering of the kernels and on the square nature of the
+                        # kernels
 
-        :param state: the board as a bidimensional array
-        :return: None if no critical situations are spotted otherwise the action the player must take to win in this
-        round or to prevent the opponent from winning in the following round.
-        """
+                        # Check if first row
+                        if (i + k_i) >= state.shape[0] - 1:
+                            return j + k_i
+                        # Check if the row below has the cell not empty
+                        elif state[i + k_i + 1][j + k_i] != 0:
+                            return j + k_i
 
-        state_diagonal = np.pad(state, [(1, 1), (1, 1)], mode='constant')
-        diagonal_image = convolve2d(state_diagonal,
-                                    self.diag2_kernel,
-                                    mode="valid")[1:(state.shape[1] - 1), 1:(state.shape[1] - 1)]
-        return check_logic(check_second_diagonal, state, diagonal_image)
+        # Check anti-diagonal
+        for k_i, k in enumerate(self.diag2_kernels):
+            k_w = k.shape[0]
+            k_h = k.shape[1]
+
+            k = k * int(target / abs(target))
+            for i in range(state.shape[0] - k_w + 1):
+                for j in range(state.shape[1] - k_h + 1):
+                    if (np.diag(np.fliplr(state[i:i + k_w, j:j + k_h])) == np.diag(np.fliplr(k))).all():
+                        # Empty cell position is based on the ordering of the kernels and on the square nature of the
+                        # kernels
+                        empty_cell = k_h - k_i
+
+                        # Check if first row
+                        if (i + empty_cell) >= state.shape[0] - 1:
+                            return j + k_i
+                        # Check if the row below has the cell not empty
+                        elif state[i + empty_cell + 1][j + k_i] != 0:
+                            return j + k_i
+        return None
