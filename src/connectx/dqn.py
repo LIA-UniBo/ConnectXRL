@@ -1,6 +1,6 @@
 import math
 import random
-from typing import List
+from typing import List, Optional
 
 import pylab as pl
 import matplotlib.pyplot as plt
@@ -79,12 +79,14 @@ class DQN(object):
                  target_update: int = 500,
                  learning_rate: float = 1e-2,
                  epochs: int = 2,
-                 constraint: ConstraintType = ConstraintType.LOGIC_TRAIN,
+                 constraint: Optional[ConstraintType] = ConstraintType.LOGIC_TRAIN,
+                 sbr_coeff: float = 0.9,
                  device: str = 'cpu',
                  notebook: bool = False):
         """
 
         :param env: the Gym environment where it is applied
+        :param non_local: TODO
         :param batch_size: size of samples from  the memory
         :param gamma: discount factor
         :param eps_start: epsilon-greedy initial value
@@ -93,7 +95,12 @@ class DQN(object):
         :param memory_size: size of the experience replay
         :param target_update: after how many episodes the target network is updated
         :param learning_rate: optimizer learning rate
+        :param epochs: number of training epochs
+        :param constraint: if not None the constraint type
+        :param sbr_coeff: Semantic Based Regularization coefficient (used only when constraint is ConstraintType.SBR)
+
         :param device: the device where the training occurs, 'cpu', 'gpu' ...
+        :param notebook: if True it formats for notebook execution
         """
 
         self.env = env
@@ -106,6 +113,7 @@ class DQN(object):
         self.epochs = epochs
         self.device = device
         self.constraints = Constraints(constraint) if constraint else None
+        self.sbr_coeff = sbr_coeff
         self.notebook = notebook
 
         # Get number of actions from gym action space
@@ -162,17 +170,15 @@ class DQN(object):
             state_action_values = self.policy_net(state_batch)
 
             # SBR regularization term
-            if self.constraints.c_type is ConstraintType.SBR:
+            if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
 
                 # print(batch.board[0].squeeze())
 
-                constraint_action = torch.stack([self.constraints.select_constrained_action(b.squeeze())
+                constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze())
                                                  for b in batch.board])
-                # TODO: change
-                sbr_coeff = 0.9
 
-                sbr_term = sbr_coeff * (F.softmax(state_action_values, dim=1).gather(1, action_batch) -
-                                        constraint_action.gather(1, action_batch)) ** 2
+                sbr_term = self.sbr_coeff * (F.softmax(state_action_values, dim=1).gather(1, action_batch) -
+                                             constraint_actions.gather(1, action_batch)) ** 2
                 # TODO: use
                 # print(sbr_term[0])
 
@@ -185,7 +191,19 @@ class DQN(object):
             # This is merged based on the mask, such that we'll have either the expected
             # state value or 0 in case the state was final.
             next_state_values = torch.zeros(self.batch_size, device=self.device)
-            next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+
+            # CDQN action selection in the Q-update
+            if self.constraints is not None and self.constraints.c_type is ConstraintType.CDQN:
+                # Compute action masks
+                constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze())
+                                           for b in batch.board])
+                # Get action values and set to -inf those who are masked out
+                constrained_action = self.target_net(non_final_next_states)
+                constrained_action[constraints == 0] = -np.inf
+                next_state_values[non_final_mask] = constrained_action.max(1)[0].detach()
+            else:
+                next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+
             # Compute the expected Q values
             expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
@@ -205,7 +223,7 @@ class DQN(object):
 
     def training_loop(self,
                       num_episodes: int = 50,
-                      save_path: str = None,
+                      save_path: Optional[str] = None,
                       save_frequency: int = 1000,
                       render_env: bool = False,
                       render_waiting_time: float = 1,
@@ -266,9 +284,10 @@ class DQN(object):
                 if self.constraints is not None and self.constraints.c_type in [ConstraintType.LOGIC_PURE,
                                                                                 ConstraintType.LOGIC_TRAIN]:
                     action = self.constraints.select_constrained_action(state.squeeze())
-                if self.constraints is None \
-                        or (self.constraints.c_type in [ConstraintType.LOGIC_PURE,
-                                                        ConstraintType.LOGIC_TRAIN] and action.sum().item() != 1):
+                if self.constraints is None or \
+                        action is None or \
+                        (self.constraints.c_type in [ConstraintType.LOGIC_PURE,
+                                                     ConstraintType.LOGIC_TRAIN] and action.sum().item() != 1):
                     action = self.select_action(screen, step_eps)
                     constrained_action_performed = False
 

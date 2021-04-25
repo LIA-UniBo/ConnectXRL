@@ -5,7 +5,7 @@ from src.connectx.environment import ConnectXGymEnv
 env = ConnectXGymEnv('random', True)
 dqn = DQN(env,
           non_local=True,
-          constraint=ConstraintType.LOGIC_PURE)
+          constraint=ConstraintType.CDQN)
 
 dqn.training_loop(20000,
                   render_env=False,

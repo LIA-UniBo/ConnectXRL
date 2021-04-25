@@ -1,10 +1,13 @@
 from random import choice
 from typing import Tuple
-from torch.nn import functional as F
+
+import numpy as np
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
+from src.connectx.constraints import ConstraintType, Constraints
 from src.connectx.environment import convert_state_to_image
 
 
@@ -19,13 +22,36 @@ def dqn_agent(observation: dict,
     """
 
     model = CNNPolicy(configuration.columns,
-                      (3, configuration.rows, configuration.columns))
+                      (3, configuration.rows, configuration.columns),
+                      c_type=configuration.c_type)
 
     model.load_state_dict(torch.load(configuration.weights_path))
     model.eval()
 
-    # TODO: Add LOGIC_PURE decision
-    col = model(torch.from_numpy(convert_state_to_image(observation.board)))
+    constraints = Constraints(configuration.c_type) if configuration.c_type else None
+    col = None
+
+    # If LOGIC_PURE detect a critical situation the correct action is performed
+    if constraints and configuration.c_type is ConstraintType.LOGIC_PURE:
+        col = constraints.select_constrained_action(observation.board)
+
+    if constraints is None or \
+            col is None or \
+            (col.sum().item() != 1 and constraints.c_type is ConstraintType.LOGIC_PURE):
+
+        col = model(torch.from_numpy(convert_state_to_image(observation.board)))
+
+        # Safe policy estimation on the action values
+        if constraints and constraints.c_type is ConstraintType.SFE:
+            # Compute action masks
+            constraints = torch.stack([constraints.select_constrained_action(b.squeeze())
+                                       for b in observation.board])
+            # Set invalid actions to -inf
+            col[constraints == 0] = -np.inf
+
+    if type(col) is not int:
+        # Select action suggested by constraints
+        col = col.max(0)[1].view(1, 1)
 
     # Check if selected column is valid
     is_valid = (observation.board[int(col)] == 0)
@@ -197,8 +223,8 @@ class CNNPolicy(nn.Module):
         :param input_shape: Expected input image shape (channels, height, width)
         """
         super(CNNPolicy, self).__init__()
-        self.input_shape = input_shape
         self.action_space_size = action_space_size
+        self.input_shape = input_shape
         self.non_local = non_local
         if self.non_local:
             self.non_local_block = NonLocalBlock(input_shape[0], dimension=2)

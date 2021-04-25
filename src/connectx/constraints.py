@@ -24,8 +24,14 @@ class ConstraintType(Enum):
     # The logic is used to produce vectors used to regularize the loss function (Semantic Based Regularization)
     SBR = 3
 
-    # The logic is used to create the safe action sets as described in https://arxiv.org/pdf/2003.09398.pdf (Constrained
-    # Deep Q-Networks)
+    # The logic is used to create safe action sets which are used to restrict the actions (action masking) at policy
+    # execution time (Safe Policy Extraction). This approach can lead to non-optimal policies under the given set of
+    # constraints.
+    SFE = 3
+
+    # The logic is used to create safe action sets as described in https://arxiv.org/pdf/2003.09398.pdf (Constrained
+    # Deep Q-Networks). In this scenario the sets are used to constrain the Q-update by allowing only the limited
+    # portion of legal actions.
     CDQN = 4
 
 
@@ -266,6 +272,7 @@ class Constraints(object):
             k = k * int(target / abs(target))
             for i in range(state.shape[0] - k_w + 1):
                 for j in range(state.shape[1] - k_h + 1):
+                    # Flip the kernel just to extract the anti-diagonal as the main diagonal
                     if np.all((np.diag(np.fliplr(state[i:i + k_w, j:j + k_h])) == np.diag(np.fliplr(k)))):
                         # Empty cell position is based on the ordering of the kernels and on the square nature of the
                         # kernels
