@@ -79,7 +79,7 @@ class DQN(object):
                  target_update: int = 500,
                  learning_rate: float = 1e-2,
                  epochs: int = 2,
-                 constraint: Optional[ConstraintType] = ConstraintType.LOGIC_TRAIN,
+                 constraint_type: Optional[ConstraintType] = ConstraintType.LOGIC_TRAIN,
                  sbr_coeff: float = 0.9,
                  device: str = 'cpu',
                  notebook: bool = False):
@@ -96,7 +96,7 @@ class DQN(object):
         :param target_update: after how many episodes the target network is updated
         :param learning_rate: optimizer learning rate
         :param epochs: number of training epochs
-        :param constraint: if not None the constraint type
+        :param constraint_type: if not None indicates the constraint type
         :param sbr_coeff: Semantic Based Regularization coefficient (used only when constraint is ConstraintType.SBR)
 
         :param device: the device where the training occurs, 'cpu', 'gpu' ...
@@ -112,7 +112,7 @@ class DQN(object):
         self.target_update = target_update
         self.epochs = epochs
         self.device = device
-        self.constraints = Constraints(constraint) if constraint else None
+        self.constraints = Constraints(constraint_type, env.first) if constraint_type else None
         self.sbr_coeff = sbr_coeff
         self.notebook = notebook
 
@@ -312,7 +312,7 @@ class DQN(object):
                         push = False
 
                 # Store the transition in memory if match has not ended and constrained action is from LOGIC_PURE method
-                if push and not (constrained_action_performed and self.constraints.type is ConstraintType.LOGIC_PURE):
+                if push and not (constrained_action_performed and self.constraints.c_type is ConstraintType.LOGIC_PURE):
                     self.memory.push(screen, action, new_screen, reward, state)
 
                 # Update old state and image

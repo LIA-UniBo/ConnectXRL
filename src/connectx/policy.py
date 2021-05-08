@@ -42,7 +42,7 @@ def dqn_agent(observation: dict,
         col = model(torch.from_numpy(convert_state_to_image(observation.board)))
 
         # Safe policy estimation on the action values
-        if constraints and constraints.c_type is ConstraintType.SFE:
+        if constraints and constraints.c_type is ConstraintType.SPE:
             # Compute action masks
             constraints = torch.stack([constraints.select_constrained_action(b.squeeze())
                                        for b in observation.board])

@@ -11,9 +11,9 @@ class ConstraintType(Enum):
     Different ways to apply the constraints
     """
 
-    # The logic strategy decouples the logical and the learnt actions. The agent encapsulates a logical process to
-    # solve particular situations. It only supports single action decisions, namely the logic is not able to decide or
-    # help deciding between multiple possible actions (the network is used in that case).
+    # A logic strategy which decouples the logical and the learnt actions. The agent encapsulates a logical process to
+    # solve particular situations, during training and testing. It only supports single action decisions, namely the
+    # logic is not able to decide or help deciding between multiple possible actions (the network is used in that case).
     LOGIC_PURE = 1
 
     # The logic process is active only during training, in order to help the agent learning a better policy. At
@@ -21,17 +21,16 @@ class ConstraintType(Enum):
     # logic is not able to decide or help deciding between multiple possible actions (the network is used in that case).
     LOGIC_TRAIN = 2
 
-    # The logic is used to produce vectors used to regularize the loss function (Semantic Based Regularization)
+    # The logic is used to produce action masks used to regularize the loss function (Semantic Based Regularization)
     SBR = 3
 
-    # The logic is used to create safe action sets which are used to restrict the actions (action masking) at policy
-    # execution time (Safe Policy Extraction). This approach can lead to non-optimal policies under the given set of
-    # constraints.
-    SFE = 3
+    # The logic is used to create safe action sets which are used to restrict the actions (action masking) at execution
+    # time (Safe Policy Extraction). This approach can lead to non-optimal policies under the given set of constraints.
+    SPE = 3
 
     # The logic is used to create safe action sets as described in https://arxiv.org/pdf/2003.09398.pdf (Constrained
-    # Deep Q-Networks). In this scenario the sets are used to constrain the Q-update by allowing only the limited
-    # portion of legal actions.
+    # Deep Q-Networks). In this scenario the sets are used to constrain the Q-update by allowing the agent to perform
+    # only the limited portion of legal actions.
     CDQN = 4
 
 
@@ -132,22 +131,23 @@ class Constraints(object):
     Class which encapsulates the constraint logics.
     """
 
-    def __init__(self, c_type: ConstraintType, player_number: int = 1):
+    def __init__(self, c_type: ConstraintType, first_player: bool = True):
         """
 
         :param c_type: the constraint type represented
-        :param player_number: the number of the current player (the opponent will be 2 if the current is 1 and vice
-        versa)
+        :param first_player: if True the current player is number 1 the opponent will be number 2 and vice versa
         """
         # Define kernels used in the convolutions to detect the critical situations
         self.c_type = c_type
 
-        self.player_number = player_number
+        self.player_number = 1 if first_player else 2
 
         self.horizontal_kernel = np.array([[1, 1, 1]])
         self.vertical_kernel = np.transpose(self.horizontal_kernel)
 
+        # diag1 = \
         self.diag1_kernels = []
+        # diag2 = /
         self.diag2_kernels = []
 
         for k in range(4):
@@ -160,10 +160,12 @@ class Constraints(object):
         """
         Checks every possible critical situations to constraint the action selection.
 
-        :param state: the board as a bidimensional array
-        :return: a tensor of 1 and 0 representing respectively actions which may lead to secure or insecure situations.
+        :param state: the board as a bi-dimensional array
+        :return: a tensor of 1 and 0 representing respectively actions which may lead to secure or insecure situations,
+        called action mask.
         """
 
+        # Copy state to avoid modifying original one
         original_state = np.copy(state)
         state = np.copy(state)
         state[original_state == self.player_number] = 1
@@ -175,7 +177,7 @@ class Constraints(object):
         if not state.any():
             constrained_action = 3
 
-        # Check first if it is possible to win then if there is a possibility to lose
+        # Check first if it is possible to win (target = 3) then if there is a possibility to lose (target = -3)
         for target in [3, -3]:
             # If action hasn't been decided yet
             if constrained_action is None:
@@ -185,16 +187,18 @@ class Constraints(object):
                 if constrained_action is None:
                     constrained_action = self.check_win_loss_diagonals(state, target)
 
-        # Check invalid actions
+        # Check invalid actions (full columns where placing a stone would lead to an invalid movement)
         invalid = torch.tensor([0 if state[0][j] != 0 else 1 for j in range(state.shape[1])])
         if constrained_action is not None and invalid[constrained_action] == 0:
             raise RuntimeError('Invalid action corresponds to a constrained action!')
 
+        # No critical situations, the mask allow every possible action, otherwise some are masked
         if constrained_action is None:
             constrained_action = torch.ones(state.shape[1])
         else:
             constrained_action = torch.tensor([1 if i == constrained_action else 0 for i in range(state.shape[1])])
 
+        # Invalid actions lead to multiple choice situations, which is not supported by LOGIC_* constraints
         return constrained_action * invalid if self.c_type not in (ConstraintType.LOGIC_PURE,
                                                                    ConstraintType.LOGIC_TRAIN) else constrained_action
 
