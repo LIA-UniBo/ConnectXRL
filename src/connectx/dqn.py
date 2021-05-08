@@ -288,7 +288,7 @@ class DQN(object):
                         action is None or \
                         (self.constraints.c_type in [ConstraintType.LOGIC_PURE,
                                                      ConstraintType.LOGIC_TRAIN] and action.sum().item() != 1):
-                    action = self.select_action(screen, step_eps)
+                    action = self.select_action(screen, state, step_eps)
                     constrained_action_performed = False
 
                 if constrained_action_performed:
@@ -313,7 +313,7 @@ class DQN(object):
 
                 # Store the transition in memory if match has not ended and constrained action is from LOGIC_PURE method
                 if push and not (constrained_action_performed and self.constraints.c_type is ConstraintType.LOGIC_PURE):
-                    self.memory.push(screen, action, new_screen, reward, state)
+                    self.memory.push(screen, action.to(self.device), new_screen, reward, state)
 
                 # Update old state and image
                 # state = new_state
@@ -385,12 +385,14 @@ class DQN(object):
         print('Training complete')
 
     def select_action(self,
-                      state: torch.Tensor,
+                      screen: torch.Tensor,
+                      state: np.array,
                       eps: List[float]) -> torch.Tensor:
         """
         Apply the policy on the observed state to decide the next action or explore by choosing a random action.
 
-        :param state: the current state
+        :param screen: the current screen
+        :param state: the board
         :param eps: the list containing the computed eps (metrics)
         :return: the chosen action
         """
@@ -403,13 +405,25 @@ class DQN(object):
 
         self.steps_done += 1
 
+        # Compute constraints if SPE is active
+        if self.constraints is not None and self.constraints.c_type is ConstraintType.SPE:
+            constraints = self.constraints.select_constrained_action(state.squeeze())
+        else:
+            constraints = None
+
         if sample > eps_threshold:
             # Exploitation
             with torch.no_grad():
-                # t.max(1) will return largest column value of each row.
-                # second column on max result is index of where max element was
-                # found, so we pick action with the larger expected reward.
-                return self.policy_net(state).max(1)[1].view(1, 1)
+                if constraints is not None:
+                    # Get action values and set to -inf those who are masked out
+                    constrained_action = self.policy_net(screen).squeeze()
+                    constrained_action[constraints == 0] = -np.inf
+                    return constrained_action.max(0)[1].view(1, 1)
+                else:
+                    return self.policy_net(screen).max(1)[1].view(1, 1)
         else:
-            # Exploration
-            return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
+            # Exploration with SPE and without it
+            if constraints is not None:
+                return torch.tensor([[random.choice(torch.nonzero(constraints))]], device=self.device, dtype=torch.long)
+            else:
+                return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)

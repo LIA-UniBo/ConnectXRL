@@ -26,12 +26,12 @@ class ConstraintType(Enum):
 
     # The logic is used to create safe action sets which are used to restrict the actions (action masking) at execution
     # time (Safe Policy Extraction). This approach can lead to non-optimal policies under the given set of constraints.
-    SPE = 3
+    SPE = 4
 
     # The logic is used to create safe action sets as described in https://arxiv.org/pdf/2003.09398.pdf (Constrained
     # Deep Q-Networks). In this scenario the sets are used to constrain the Q-update by allowing the agent to perform
     # only the limited portion of legal actions.
-    CDQN = 4
+    CDQN = 5
 
 
 def check_vertically(state: np.array,
