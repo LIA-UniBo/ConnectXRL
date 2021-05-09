@@ -174,17 +174,16 @@ class DQN(object):
 
             # SBR regularization term
             if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
-
-                # print(batch.board[0].squeeze())
-
                 constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze(),
                                                                                              self.env.first)
-                                                 for b in batch.board])
+                                                 for b in batch.board]).to(self.device)
 
+                # Get action probabilities from the policy net, select the actions and then subtract the action mask,
+                # if the two vectors are similar the term will be smaller, otherwise the term will be larger.
                 sbr_term = self.sbr_coeff * (F.softmax(state_action_values, dim=1).gather(1, action_batch) -
                                              constraint_actions.gather(1, action_batch)) ** 2
-                # TODO: use
-                # print(sbr_term[0])
+            else:
+                sbr_term = torch.zeros(1)
 
             # Select the columns of the actions taken
             state_action_values = state_action_values.gather(1, action_batch)
@@ -212,7 +211,7 @@ class DQN(object):
             expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
             # Compute Huber loss
-            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) + sbr_term.sum()
 
             # Track loss
             losses.append(loss.detach().item())
