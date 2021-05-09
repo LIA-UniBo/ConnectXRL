@@ -1,4 +1,5 @@
 import math
+import os
 import random
 from typing import List, Optional
 
@@ -85,7 +86,7 @@ class DQN(object):
                  notebook: bool = False):
         """
 
-        :param env: the Gym environment where it is applied
+        :param env: the Gym environment used to initialize the network
         :param non_local: TODO
         :param batch_size: size of samples from  the memory
         :param gamma: discount factor
@@ -104,6 +105,8 @@ class DQN(object):
         """
 
         self.env = env
+        # Used to restore the initial value in the environment
+        self.is_initially_first = env.first
         self.batch_size = batch_size
         self.gamma = gamma
         self.eps_start = eps_start
@@ -112,7 +115,7 @@ class DQN(object):
         self.target_update = target_update
         self.epochs = epochs
         self.device = device
-        self.constraints = Constraints(constraint_type, env.first) if constraint_type else None
+        self.constraints = Constraints(constraint_type) if constraint_type else None
         self.sbr_coeff = sbr_coeff
         self.notebook = notebook
 
@@ -174,7 +177,8 @@ class DQN(object):
 
                 # print(batch.board[0].squeeze())
 
-                constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze())
+                constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze(),
+                                                                                             self.env.first)
                                                  for b in batch.board])
 
                 sbr_term = self.sbr_coeff * (F.softmax(state_action_values, dim=1).gather(1, action_batch) -
@@ -195,7 +199,7 @@ class DQN(object):
             # CDQN action selection in the Q-update
             if self.constraints is not None and self.constraints.c_type is ConstraintType.CDQN:
                 # Compute action masks
-                constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze())
+                constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze(), self.env.first)
                                            for b in batch.board])
                 # Get action values and set to -inf those who are masked out
                 constrained_action = self.target_net(non_final_next_states)
@@ -222,7 +226,8 @@ class DQN(object):
             self.optimizer.step()
 
     def training_loop(self,
-                      num_episodes: int = 50,
+                      n_episodes_as_1st_player: int = 25,
+                      n_episodes_as_2nd_player: int = 25,
                       save_path: Optional[str] = None,
                       save_frequency: int = 1000,
                       render_env: bool = False,
@@ -235,7 +240,8 @@ class DQN(object):
         """
         The DQN training algorithm.
 
-        :param num_episodes: the number of episodes to train
+        :param n_episodes_as_1st_player: the number of episodes to train the agent as the 1st player
+        :param n_episodes_as_2nd_player: the number of episodes to train the agent as the 2nd player
         :param save_path: path where the model is saved at the end
         :param save_frequency: how many episodes between each weight saving
         :param render_env: If true render the game board at each step
@@ -264,8 +270,21 @@ class DQN(object):
             fig, axs = pl.subplots(3, 2, figsize=(22, 12), constrained_layout=True)
         else:
             fig, axs = plt.subplots(3, 2, constrained_layout=True)
+        fig.suptitle(f'DQN ({self.constraints.c_type if self.constraints else None}), batch size = {self.batch_size}, '
+                     f'memory_size = {self.memory.capacity}, gamma = {self.gamma}, target update every '
+                     f'{self.target_update}\noptimizer = {self.optimizer.__str__().replace(os.linesep, "")}',
+                     fontsize=9)
 
-        for i_episode in range(num_episodes):
+        # List used to randomly select if the agent will play as the first (True) or as second player (False)
+        first_or_second = [True for _ in range(n_episodes_as_1st_player)]
+        first_or_second += [False for _ in range(n_episodes_as_2nd_player)]
+        random.shuffle(first_or_second)
+
+        for i_episode in range(n_episodes_as_1st_player + n_episodes_as_2nd_player):
+
+            # Change first or second player
+            self.env.set_first(first_or_second[i_episode])
+
             # Initialize the environment and state
             state = self.env.reset()
             # Get image and convert to torch tensor
@@ -283,7 +302,7 @@ class DQN(object):
                 # exploit the policy
                 if self.constraints is not None and self.constraints.c_type in [ConstraintType.LOGIC_PURE,
                                                                                 ConstraintType.LOGIC_TRAIN]:
-                    action = self.constraints.select_constrained_action(state.squeeze())
+                    action = self.constraints.select_constrained_action(state.squeeze(), self.env.first)
                 if self.constraints is None or \
                         action is None or \
                         (self.constraints.c_type in [ConstraintType.LOGIC_PURE,
@@ -382,6 +401,7 @@ class DQN(object):
                 print(f'Model saved at {save_filename}')
                 torch.save(self.target_net.state_dict(), save_filename)
 
+        self.env.set_first(self.is_initially_first)
         print('Training complete')
 
     def select_action(self,
@@ -407,7 +427,7 @@ class DQN(object):
 
         # Compute constraints if SPE is active
         if self.constraints is not None and self.constraints.c_type is ConstraintType.SPE:
-            constraints = self.constraints.select_constrained_action(state.squeeze())
+            constraints = self.constraints.select_constrained_action(state.squeeze(), self.env.first)
         else:
             constraints = None
 

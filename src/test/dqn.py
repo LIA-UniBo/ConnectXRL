@@ -7,8 +7,9 @@ dqn = DQN(env,
           non_local=True,
           constraint_type=ConstraintType.CDQN)
 
-dqn.training_loop(20000,
-                  render_env=False,
+dqn.training_loop(n_episodes_as_1st_player=10,
+                  n_episodes_as_2nd_player=10,
+                  render_env=True,
                   save_path='../',
                   update_plots_frequency=200)
 input('Press to close ...')

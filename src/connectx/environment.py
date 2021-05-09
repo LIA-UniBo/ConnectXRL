@@ -106,13 +106,23 @@ class ConnectXGymEnv(gym.Env):
 
         self.obs = None
 
+    def set_first(self, new_first):
+        """
+
+        :param new_first: the new value to assign to first. If True the environment considers the training player as
+        the first one
+        """
+        self.first = new_first
+        self.kaggle_env = make('connectx', debug=True)
+        self.env = self.kaggle_env.train([None, self.opponent] if self.first else [self.opponent, None])
+
     def reset(self) -> np.ndarray:
         """
 
         Reset the environment and the trainer.
         """
         self.obs = self.env.reset()
-        return np.array(self.obs['board']).reshape(self.rows, self.columns, 1)
+        return np.array(self.obs['board']).reshape((self.rows, self.columns, 1))
 
     def reward_shaping(self,
                        original_reward: int,
@@ -165,7 +175,8 @@ class ConnectXGymEnv(gym.Env):
         else:
             reward, done, end_status = self.invalid_reward, True, 'invalid'
         # The observed board is returned as a matrix even if internally is used as an array
-        return np.array(self.obs['board']).reshape(self.rows, self.columns, 1), reward, done, {'end_status': end_status}
+        return np.array(self.obs['board']).reshape((self.rows, self.columns, 1)), reward, done, \
+               {'end_status': end_status}
 
     def render(self, **kwargs):
         """
@@ -176,7 +187,7 @@ class ConnectXGymEnv(gym.Env):
         """
         mode = get(kwargs, str, "human", path=["mode"])
         if mode == 'rgb_image':
-            state = np.array(self.kaggle_env.state[0]['observation']['board']).reshape(self.rows, self.columns, 1)
+            state = np.array(self.kaggle_env.state[0]['observation']['board']).reshape((self.rows, self.columns, 1))
 
             empty_color = get(kwargs, list, [VMAX * 255, VMAX * 255, VMAX * 255], path=["empty_color"])
             first_player_color = get(kwargs, list, [VMAX * 255, VMIN * 255, VMIN * 255], path=["first_player_color"])
@@ -186,7 +197,8 @@ class ConnectXGymEnv(gym.Env):
                                                                                         second_player_color]))
             plt.figure(2)
             plt.clf()
-            plt.xlabel(f'Player1: {rgb_to_name(first_player_color)} Player2: {rgb_to_name(second_player_color)}')
+            plt.xlabel(f'Player1: {rgb_to_name(first_player_color)}{" (you) " if self.first else " "}'
+                       f'Player2: {rgb_to_name(second_player_color)}{" (you)" if not self.first else ""}')
             plt.title('ConnectX')
             plt.imshow(state,
                        interpolation='none',

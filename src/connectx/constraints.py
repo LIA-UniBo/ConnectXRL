@@ -131,16 +131,13 @@ class Constraints(object):
     Class which encapsulates the constraint logics.
     """
 
-    def __init__(self, c_type: ConstraintType, first_player: bool = True):
+    def __init__(self, c_type: ConstraintType):
         """
 
         :param c_type: the constraint type represented
-        :param first_player: if True the current player is number 1 the opponent will be number 2 and vice versa
         """
         # Define kernels used in the convolutions to detect the critical situations
         self.c_type = c_type
-
-        self.player_number = 1 if first_player else 2
 
         self.horizontal_kernel = np.array([[1, 1, 1]])
         self.vertical_kernel = np.transpose(self.horizontal_kernel)
@@ -156,11 +153,12 @@ class Constraints(object):
             self.diag1_kernels.append(np.vstack(kernel))
             self.diag2_kernels.insert(0, np.fliplr(self.diag1_kernels[-1]))
 
-    def select_constrained_action(self, state: np.array) -> torch.Tensor:
+    def select_constrained_action(self, state: np.array, first_player: bool) -> torch.Tensor:
         """
         Checks every possible critical situations to constraint the action selection.
 
         :param state: the board as a bi-dimensional array
+        :param first_player: if True the current player is number 1 the opponent will be number 2 and vice versa
         :return: a tensor of 1 and 0 representing respectively actions which may lead to secure or insecure situations,
         called action mask.
         """
@@ -168,8 +166,9 @@ class Constraints(object):
         # Copy state to avoid modifying original one
         original_state = np.copy(state)
         state = np.copy(state)
-        state[original_state == self.player_number] = 1
-        state[original_state == (2 if self.player_number == 1 else 1)] = -1
+        player_number = 1 if first_player else 2
+        state[original_state == player_number] = 1
+        state[original_state == (2 if player_number == 1 else 1)] = -1
 
         constrained_action = None
 

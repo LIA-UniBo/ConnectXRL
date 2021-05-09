@@ -59,3 +59,44 @@ def evaluate_matches(matches: List[Dict[str, int]]):
         print(f' {m["ply1"]} vs {m["ply1"]} ({m["eps"]} eps):', np.mean(evaluate('connectx',
                                                                                  [m['ply1'], m['ply2']],
                                                                                  num_episodes=m['eps'])))
+
+
+def get_win_percentages(player: Union[str, Callable],
+                        opponents: List[Union[str, Callable]],
+                        player_name: Optional[str] = None,
+                        config: Optional[Dict] = None,
+                        n_rounds_as_1st_player: int = 100,
+                        n_rounds_as_2nd_player: int = 100):
+    """
+    Print win/loss percentages between the player and the list of opponents.
+
+    :param player: Your player
+    :param player_name: Your player's name
+    :param opponents: List of opponents
+    :param config: dict specifying the board ('rows' and 'columns') and the stones to win ('inarow'). Default values are
+    {'rows': 6, 'columns': 7, 'inarow': 4}
+    :param n_rounds_as_1st_player: number of rounds where agent 1 play as the first player
+    :param n_rounds_as_2nd_player: number of rounds where agent 1 play as the second player
+    """
+
+    if config is None:
+        config = {'rows': 6, 'columns': 7, 'inarow': 4}
+
+    for opponent in opponents:
+        outcomes = evaluate('connectx', [player, opponent], config, [], n_rounds_as_1st_player)
+        outcomes += [[b, a] for [a, b] in evaluate('connectx', [opponent, player], config, [], n_rounds_as_2nd_player)]
+
+        opponent_name = opponent.__name__ if callable(opponent) else opponent
+        if player_name is None:
+            player_name = player.__name__ if callable(player) else player
+
+        # print(outcomes)
+        print()
+        print(f'{player_name} win percentage: {np.round(outcomes.count([1, -1]) / len(outcomes), 2)} - '
+              f'{outcomes.count([1, -1])}/{len(outcomes)}')
+        print(f'{opponent_name} win percentage: {np.round(outcomes.count([-1, 1]) / len(outcomes), 2)} - '
+              f'{outcomes.count([-1, 1])}/{len(outcomes)}')
+        print(f'Draw percentage: {np.round(outcomes.count([0, 0]) / len(outcomes), 2)} - '
+              f'{outcomes.count([0, 0])}/{len(outcomes)}')
+        print(f'Number of invalid moves by {player_name}: {outcomes.count([None, 0])}')
+        print(f'Number of invalid moves by {opponent_name}: {outcomes.count([0, None])}\n')
