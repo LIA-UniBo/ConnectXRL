@@ -36,7 +36,7 @@ def convert_state_to_image(state: np.ndarray,
 
     if keep_player_colour and not first_player:
         index = np.array([0, 2, 1])
-        state[index] = state
+        num_to_rgb = num_to_rgb[index]
     state = num_to_rgb[state]
     if matplotlib:
         return np.squeeze(state)
@@ -210,8 +210,12 @@ class ConnectXGymEnv(gym.Env):
                                            keep_player_colour=keep_player_colour)
             plt.figure(2)
             plt.clf()
-            plt.xlabel(f'Player1: {rgb_to_name(first_player_color)}{" (you) " if self.first else " "}'
-                       f'Player2: {rgb_to_name(second_player_color)}{" (you)" if not self.first else ""}')
+            if not keep_player_colour:
+                plt.xlabel(f'Player1: {rgb_to_name(first_player_color)}{" (you) " if self.first else " "}'
+                           f'Player2: {rgb_to_name(second_player_color)}{" (you)" if not self.first else ""}')
+            else:
+                plt.xlabel(f'You: {rgb_to_name(first_player_color)}{" (first) " if self.first else "(second) "}'
+                           f'Opponent: {rgb_to_name(second_player_color)}')
             plt.title('ConnectX')
             plt.imshow(state,
                        interpolation='none',
