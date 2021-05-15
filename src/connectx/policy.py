@@ -205,4 +205,4 @@ class CNNPolicy(nn.Module):
         # Extract features
         x = self.feature_extractor(x)
         # Flatten and pass them to fc heads
-        return self.fc_head(x.view(x.size(0), -1))
+        return torch.tanh(self.fc_head(x.view(x.size(0), -1)))
