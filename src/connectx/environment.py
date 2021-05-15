@@ -16,19 +16,27 @@ def convert_state_to_image(state: np.ndarray,
                            matplotlib: bool = False,
                            num_to_rgb: np.ndarray = np.array([[VMAX, VMAX, VMAX],
                                                               [VMAX, VMIN, VMIN],
-                                                              [VMIN, VMIN, VMAX]])) -> Union[np.ndarray, None]:
+                                                              [VMIN, VMIN, VMAX]]),
+                           first_player: bool = True,
+                           keep_player_colour: bool = True) -> Union[np.ndarray, None]:
     """
 
     :param state: the original state from the environment. Will contain values 0 for empty cells, 1 and 2 for the stones
     of the 1st player and 2nd players respectively.
     :param matplotlib: if True the channel is represented with the last dimension (3rd) so it is possible to show with
     matplotlib. Otherwise the representation is more suitable for PyTorch and the matrix type is converted to float32.
-    :param num_to_rgb: how to map values to rgb colors.
+    :param num_to_rgb: how to map number of players to RGB colors.
+    :param first_player: if True the first player colour is the defined one, otherwise if keep_player_color is True
+    will be swapped
+    :param keep_player_colour: if True the agent color is maintained between player 1 and player 2
     :return: an RGB image representing the state.
     """
     if state is None:
         return None
 
+    if keep_player_colour and not first_player:
+        index = np.array([0, 2, 1])
+        state[index] = state
     state = num_to_rgb[state]
     if matplotlib:
         return np.squeeze(state)
@@ -189,12 +197,17 @@ class ConnectXGymEnv(gym.Env):
         if mode == 'rgb_image':
             state = np.array(self.kaggle_env.state[0]['observation']['board']).reshape((self.rows, self.columns, 1))
 
+            keep_player_colour = get(kwargs, bool, True, path=["keep_player_colour"])
             empty_color = get(kwargs, list, [VMAX * 255, VMAX * 255, VMAX * 255], path=["empty_color"])
             first_player_color = get(kwargs, list, [VMAX * 255, VMIN * 255, VMIN * 255], path=["first_player_color"])
             second_player_color = get(kwargs, list, [VMIN * 255, VMIN * 255, VMAX * 255], path=["second_player_color"])
-            state = convert_state_to_image(state, matplotlib=True, num_to_rgb=np.array([empty_color,
-                                                                                        first_player_color,
-                                                                                        second_player_color]))
+            state = convert_state_to_image(state,
+                                           matplotlib=True,
+                                           num_to_rgb=np.array([empty_color,
+                                                                first_player_color,
+                                                                second_player_color]),
+                                           first_player=self.first,
+                                           keep_player_colour=keep_player_colour)
             plt.figure(2)
             plt.clf()
             plt.xlabel(f'Player1: {rgb_to_name(first_player_color)}{" (you) " if self.first else " "}'

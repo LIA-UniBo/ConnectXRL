@@ -82,6 +82,7 @@ class DQN(object):
                  epochs: int = 2,
                  constraint_type: Optional[ConstraintType] = ConstraintType.LOGIC_TRAIN,
                  sbr_coeff: float = 0.9,
+                 keep_player_colour: bool = True,
                  device: str = 'cpu',
                  notebook: bool = False):
         """
@@ -99,6 +100,7 @@ class DQN(object):
         :param epochs: number of training epochs
         :param constraint_type: if not None indicates the constraint type
         :param sbr_coeff: Semantic Based Regularization coefficient (used only when constraint is ConstraintType.SBR)
+        :param keep_player_colour: if True the agent color is maintained between player 1 and player 2
 
         :param device: the device where the training occurs, 'cpu', 'gpu' ...
         :param notebook: if True it formats for notebook execution
@@ -117,6 +119,7 @@ class DQN(object):
         self.device = device
         self.constraints = Constraints(constraint_type) if constraint_type else None
         self.sbr_coeff = sbr_coeff
+        self.keep_player_colour = keep_player_colour
         self.notebook = notebook
 
         # Get number of actions from gym action space
@@ -176,7 +179,7 @@ class DQN(object):
             if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
                 constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze(),
                                                                                              self.env.first)
-                                                 for b in batch.board]).to(self.device)
+                                                  for b in batch.board]).to(self.device)
 
                 # Get action probabilities from the policy net, select the actions and then subtract the action mask,
                 # if the two vectors are similar the term will be smaller, otherwise the term will be larger.
@@ -287,7 +290,10 @@ class DQN(object):
             # Initialize the environment and state
             state = self.env.reset()
             # Get image and convert to torch tensor
-            screen = torch.from_numpy(convert_state_to_image(state)).to(self.device)
+            screen = torch.from_numpy(convert_state_to_image(state=state,
+                                                             first_player=first_or_second[i_episode],
+                                                             keep_player_colour=self.keep_player_colour)).to(
+                self.device)
 
             step_rewards = []
             step_eps = []
@@ -315,7 +321,10 @@ class DQN(object):
 
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
-                new_screen = torch.from_numpy(convert_state_to_image(new_state)).to(self.device)
+                new_screen = torch.from_numpy(convert_state_to_image(state=new_state,
+                                                                     first_player=first_or_second[i_episode],
+                                                                     keep_player_colour=self.keep_player_colour)).to(
+                    self.device)
 
                 # Metrics
                 step_rewards.append(reward.detach().item())
@@ -342,7 +351,9 @@ class DQN(object):
 
                 # Rendering
                 if render_env:
-                    self.env.render(mode='rgb_image', render_waiting_time=render_waiting_time)
+                    self.env.render(mode='rgb_image',
+                                    render_waiting_time=render_waiting_time,
+                                    keep_player_colour=self.keep_player_colour)
 
                 if done:
                     episode_durations.append(t + 1)
