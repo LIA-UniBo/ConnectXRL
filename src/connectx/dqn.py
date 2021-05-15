@@ -401,6 +401,8 @@ class DQN(object):
                 torch.save(self.target_net.state_dict(), save_filename)
 
         self.env.set_first(self.is_initially_first)
+        # Avoid displaying a duplicate of the last plot
+        clear_output(wait=True)
         print('Training complete')
 
     def select_action(self,
