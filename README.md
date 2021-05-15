@@ -50,12 +50,7 @@ Nikaash Puri and Sukriti Verma and Piyush Gupta and Dhruv Kayastha and Shripad D
 2020
 https://arxiv.org/abs/1912.12191
 
-Explainable Reinforcement Learning Through a Causal Lens
-Prashan Madumal and Tim Miller and Liz Sonenberg and Frank Vetere.
-2019
-https://arxiv.org/abs/1905.10958
-
-Deep Constrained Q-learning 
-Gabriel Kalweit and Maria Huegle and Moritz Werling and Joschka Boedecker
-2020
-https://arxiv.org/abs/2003.09398
+Visualizing and understanding atari agents
+Sam Greydanus and Anurag Koul and Jonathan Dodge and Alan Fern
+2017
+https://arxiv.org/pdf/1711.00138

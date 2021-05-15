@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 
 import torch
 from torch import nn
@@ -6,25 +6,29 @@ from torch.nn import functional as F
 
 
 class NonLocalBlock(nn.Module):
+    """
+    Implementation of Non-Local Block with 4 different pairwise functions but doesn't include subsampling trick.
+    https://openaccess.thecvf.com/content_cvpr_2018/papers/Wang_Non-Local_Neural_Networks_CVPR_2018_paper.pdf
+    """
+
     def __init__(self,
-                 in_channels,
-                 inter_channels=None,
-                 mode='embedded',
-                 dimension=3,
-                 bn_layer=False):
-        """Implementation of Non-Local Block with 4 different pairwise functions but doesn't include subsampling trick
-        args:
-            in_channels: original channel size (1024 in the paper)
-            inter_channels: channel size inside the block if not specifed reduced to half (512 in the paper)
-            mode: supports Gaussian, Embedded Gaussian, Dot Product, and Concatenation
-            dimension: can be 1 (temporal), 2 (spatial), 3 (spatiotemporal)
-            bn_layer: whether to add batch norm
+                 in_channels: int,
+                 inter_channels: Optional[int] = None,
+                 mode: str = 'embedded',
+                 dimension: int = 3,
+                 bn_layer: bool = False):
+        """
+        :param in_channels: original channel size (1024 in the paper)
+        :param inter_channels: channel size inside the block if not specified reduced to half (512 in the paper)
+        :param mode: supports Gaussian, Embedded Gaussian, Dot Product, and Concatenation
+        :param dimension: can be 1 (temporal), 2 (spatial), 3 (spatio-temporal)
+        :param bn_layer: whether to add batch norm
         """
         super(NonLocalBlock, self).__init__()
 
         assert dimension in [1, 2, 3]
 
-        kernel_size_dimension = {1: (1),
+        kernel_size_dimension = {1: (1,),
                                  2: (1, 1),
                                  3: (1, 1, 1)}
 
@@ -37,13 +41,13 @@ class NonLocalBlock(nn.Module):
         self.in_channels = in_channels
         self.inter_channels = inter_channels
 
-        # the channel size is reduced to half inside the block
+        # The channel size is reduced to half inside the block
         if self.inter_channels is None:
             self.inter_channels = in_channels // 2
             if self.inter_channels == 0:
                 self.inter_channels = 1
 
-        # assign appropriate convolutional, max pool, and batch norm layers for different dimensions
+        # Assign appropriate convolutional, max pool, and batch norm layers for different dimensions
         if dimension == 3:
             conv_nd = nn.Conv3d
             bn = nn.BatchNorm3d
@@ -60,23 +64,23 @@ class NonLocalBlock(nn.Module):
 
         # add BatchNorm layer after the last conv layer
         if bn_layer:
-            self.W_z = nn.Sequential(
+            self.w_z = nn.Sequential(
                 conv_nd(in_channels=self.inter_channels, out_channels=self.in_channels,
                         kernel_size=kernel_size_dimension[dimension]),
                 bn(self.in_channels)
             )
             # from section 4.1 of the paper, initializing params of BN ensures that the initial state of non-local
             # block is identity mapping
-            nn.init.constant_(self.W_z[1].weight, 0)
-            nn.init.constant_(self.W_z[1].bias, 0)
+            nn.init.constant_(self.w_z[1].weight, 0)
+            nn.init.constant_(self.w_z[1].bias, 0)
         else:
-            self.W_z = conv_nd(in_channels=self.inter_channels, out_channels=self.in_channels,
+            self.w_z = conv_nd(in_channels=self.inter_channels, out_channels=self.in_channels,
                                kernel_size=kernel_size_dimension[dimension])
 
             # from section 3.3 of the paper by initializing Wz to 0, this block can be inserted to any existing
             # architecture
-            nn.init.constant_(self.W_z.weight, 0)
-            nn.init.constant_(self.W_z.bias, 0)
+            nn.init.constant_(self.w_z.weight, 0)
+            nn.init.constant_(self.w_z.bias, 0)
 
         # define theta and phi for all operations except gaussian
         if self.mode == "embedded" or self.mode == "dot" or self.mode == "concatenate":
@@ -86,7 +90,7 @@ class NonLocalBlock(nn.Module):
                                kernel_size=kernel_size_dimension[dimension])
 
         if self.mode == "concatenate":
-            self.W_f = nn.Sequential(
+            self.w_f = nn.Sequential(
                 nn.Conv2d(in_channels=self.inter_channels * 2, out_channels=1,
                           kernel_size=kernel_size_dimension[dimension]),
                 nn.ReLU()
@@ -94,11 +98,10 @@ class NonLocalBlock(nn.Module):
 
     def forward(self, x):
         """
-        args
-            x: (N, C, T, H, W) for dimension=3; (N, C, H, W) for dimension 2; (N, C, T) for dimension 1
+        :param x: (N, C, T, H, W) for dimension=3; (N, C, H, W) for dimension 2; (N, C, T) for dimension 1
         """
 
-        global f, f_div_C
+        global f, f_dic_c
         batch_size = x.size(0)
 
         # (N, C, THW)
@@ -128,24 +131,25 @@ class NonLocalBlock(nn.Module):
             phi_x = phi_x.repeat(1, 1, h, 1)
 
             concat = torch.cat([theta_x, phi_x], dim=1)
-            f = self.W_f(concat)
+            f = self.w_f(concat)
             f = f.view(f.shape[0], f.shape[2], f.shape[3])
 
         if self.mode == "gaussian" or self.mode == "embedded":
-            f_div_C = F.softmax(f, dim=-1)
+            f_dic_c = F.softmax(f, dim=-1)
         elif self.mode == "dot" or self.mode == "concatenate":
-            N = f.shape[-1]  # number of position in x
-            f_div_C = f / N
+            # number of position in x
+            n = f.shape[-1]
+            f_dic_c = f / n
 
-        y = torch.matmul(f_div_C, g_x)
+        y = torch.matmul(f_dic_c, g_x)
 
         # contiguous here just allocates contiguous chunk of memory
         y = y.permute(0, 2, 1).contiguous()
         y = y.view(batch_size, self.inter_channels, *x.size()[2:])
 
-        W_y = self.W_z(y)
+        w_y = self.w_z(y)
         # residual connection
-        z = W_y + x
+        z = w_y + x
 
         return z
 
