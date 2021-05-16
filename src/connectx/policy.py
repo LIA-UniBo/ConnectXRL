@@ -1,11 +1,27 @@
 from typing import Tuple, Optional
 
+import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
 
+from src.connectx.constraints import ConstraintType, Constraints
+from src.connectx.environment import convert_state_to_image
 
-class NonLocalBlock(nn.Module):
+
+class Policy(nn.Module):
+    """
+    Common policy interface. Extends the nn.Module adding a predict function which encapsulates the logic of the game
+    and can be used at testing time.
+    """
+
+    def predict(self,
+                observation: dict,
+                configuration: dict,) -> int:
+        raise NotImplementedError()
+
+
+class NonLocalBlock(Policy):
     """
     Implementation of Non-Local Block with 4 different pairwise functions but doesn't include subsampling trick.
     https://openaccess.thecvf.com/content_cvpr_2018/papers/Wang_Non-Local_Neural_Networks_CVPR_2018_paper.pdf
@@ -153,8 +169,23 @@ class NonLocalBlock(nn.Module):
 
         return z
 
+    def predict(self,
+                observation: dict,
+                configuration: dict) -> int:
+        """
+        Logic used to give choose actions at prediction time. The input is similar to the interface required by the
+        Kaggle environment.
 
-class CNNPolicy(nn.Module):
+        :param observation: turn's data (board as a list, mark as 1 or 2)
+        :param configuration: environment's data (num of columns, num of rows, optional constraint type)
+        :return: the action logits
+        """
+
+        # TODO
+        raise NotImplementedError()
+
+
+class CNNPolicy(Policy):
     """
     Agent's policy based on CNN.
     """
@@ -182,8 +213,9 @@ class CNNPolicy(nn.Module):
         )
 
         with torch.no_grad():
-            self.feature_size = self.feature_extractor\
-                (torch.zeros(1, *(self.input_shape[0], self.input_shape[1], self.input_shape[2]))).view(1, -1).size(1)
+            self.feature_size = self.feature_extractor(
+                torch.zeros(1, *(self.input_shape[0], self.input_shape[1], self.input_shape[2]))
+            ).view(1, -1).size(1)
 
         self.fc_head = nn.Sequential(
             nn.Linear(self.feature_size, 64),
@@ -206,3 +238,54 @@ class CNNPolicy(nn.Module):
         x = self.feature_extractor(x)
         # Flatten and pass them to fc heads
         return torch.tanh(self.fc_head(x.view(x.size(0), -1)))
+
+    def predict(self,
+                observation: dict,
+                configuration: dict,) -> int:
+        """
+        Logic used to give choose actions at prediction time. The input is similar to the interface required by the
+        Kaggle environment.
+
+        :param observation: turn's data (board as a list, mark as 1 or 2)
+        :param configuration: environment's data (num of columns, num of rows, optional constraint type)
+        :return: the action logits
+        """
+
+        c_type = configuration['c_type']
+        constraints = Constraints(c_type) if c_type else None
+        action = None
+        # Get the board
+        board = np.array(observation['board']).reshape((configuration['rows'], configuration['columns'], 1))
+        # True if the policy represent the first player (1 in the board)
+        first_player = observation['mark'] == 1
+
+        # If LOGIC_PURE detect a critical situation the correct action is performed
+        if constraints and c_type is ConstraintType.LOGIC_PURE:
+            action = constraints.select_constrained_action(board.squeeze(),
+                                                           first_player=first_player).unsqueeze(0)
+
+        # If there are no constraints ot the LOGIC_PURE constraint is not supported (multiple options) exploit the
+        # learnt policy
+        if constraints is None or \
+                action is None or \
+                (action.sum().item() != 1 and c_type is ConstraintType.LOGIC_PURE):
+
+            # Transform the board to an image and get the action from the network
+            with torch.no_grad():
+                action = self.forward(torch.from_numpy(convert_state_to_image(board)))
+
+            # Safe policy estimation on the action values
+            if constraints and c_type is ConstraintType.SPE:
+                # Compute action masks
+                constraints = constraints.select_constrained_action(board.squeeze(),
+                                                                    first_player=first_player)
+                # Set invalid actions to -inf
+                action.squeeze()[constraints == 0] = -np.inf
+
+        """
+        if type(col) is not int:
+            # Select action suggested by constraints
+            col = col.max(1)[1].item()
+        """
+
+        return action

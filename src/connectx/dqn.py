@@ -100,8 +100,8 @@ class DQN(object):
         :param epochs: number of training epochs
         :param constraint_type: if not None indicates the constraint type
         :param sbr_coeff: Semantic Based Regularization coefficient (used only when constraint is ConstraintType.SBR)
-        :param keep_player_colour: if True the agent color is maintained between player 1 and player 2
-
+        :param keep_player_colour: if True the agent color is maintained between player 1 and player 2. e.g. You will
+        always be the red player, otherwise the 1st player will be always the red one
         :param device: the device where the training occurs, 'cpu', 'gpu' ...
         :param notebook: if True it formats for notebook execution
         """
