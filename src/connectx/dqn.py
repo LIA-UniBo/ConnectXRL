@@ -183,8 +183,9 @@ class DQN(object):
 
                 # Get action probabilities from the policy net, select the actions and then subtract the action mask,
                 # if the two vectors are similar the term will be smaller, otherwise the term will be larger.
-                sbr_term = self.sbr_coeff * (F.softmax(state_action_values, dim=1).gather(1, action_batch) -
-                                             constraint_actions.gather(1, action_batch)) ** 2
+                sbr_term = self.sbr_coeff * \
+                           (1 * constraint_actions.gather(1, torch.argmax(state_action_values, dim=1).unsqueeze(dim=1))
+                            == torch.zeros(state_action_values.shape[0])) * state_action_values.gather(1, action_batch) ** 2
             else:
                 sbr_term = torch.zeros(1)
 

@@ -5,7 +5,7 @@ import shap
 import torch
 from matplotlib import pyplot as plt
 from tqdm import tqdm
-
+from matplotlib import cm
 from src.connectx.environment import convert_state_to_image, ConnectXGymEnv
 from src.connectx.policy import Policy
 
@@ -91,9 +91,8 @@ def record_matches(env: ConnectXGymEnv,
 
 def show_recordings(state_recording: torch.Tensor,
                     action_recording: torch.Tensor,
-                    render_waiting_time: float = 1,):
+                    render_waiting_time: float = 1):
     """
-
     :param state_recording: the states
     :param action_recording: the associated actions
     :param render_waiting_time: in seconds
