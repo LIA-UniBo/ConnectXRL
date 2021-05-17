@@ -181,11 +181,12 @@ class DQN(object):
                                                                                              self.env.first)
                                                   for b in batch.board]).to(self.device)
 
-                # Get action probabilities from the policy net, select the actions and then subtract the action mask,
-                # if the two vectors are similar the term will be smaller, otherwise the term will be larger.
+                # The sbr_term penalty is equal to 0 when the chosen action is valid according to the contraint
+                # action mask, otherwise it is equal to sbr_coeff * Q_value of the chosen action
                 sbr_term = self.sbr_coeff * \
                            (1 * constraint_actions.gather(1, torch.argmax(state_action_values, dim=1).unsqueeze(dim=1))
-                            == torch.zeros(state_action_values.shape[0])) * state_action_values.gather(1, action_batch) ** 2
+                            == torch.zeros(state_action_values.shape[0]).to(self.device)) * \
+                           state_action_values.gather(1, action_batch) ** 2
             else:
                 sbr_term = torch.zeros(1)
 
