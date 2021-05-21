@@ -275,6 +275,7 @@ class DQN(object):
         else:
             fig, axs = plt.subplots(3, 2, constrained_layout=True)
         fig.suptitle(f'DQN ({self.constraints.c_type if self.constraints else None}), batch size = {self.batch_size}, '
+                     f'Opponent {self.env.opponent}, '
                      f'memory_size = {self.memory.capacity}, gamma = {self.gamma}, target update every '
                      f'{self.target_update}\noptimizer = {self.optimizer.__str__().replace(os.linesep, "")}',
                      fontsize=9)
