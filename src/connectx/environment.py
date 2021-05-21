@@ -173,6 +173,9 @@ class ConnectXGymEnv(gym.Env):
                 draw = True
             # Perform the action
             self.obs, original_reward, done, _ = self.env.step(int(action))
+            # The draw condition is rechecked since the application of the chosen action could cause a draw game
+            if all(v for v in self.obs['board']):
+                draw = True
             # Modify the reward
             reward = self.reward_shaping(original_reward, done, draw)
             # Set victory status
