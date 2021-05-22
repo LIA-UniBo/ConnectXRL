@@ -275,7 +275,7 @@ class CNNPolicy(Policy):
                 action = self.forward(torch.from_numpy(convert_state_to_image(board)))
 
             # Safe policy estimation on the action values
-            if constraints and c_type is ConstraintType.SPE:
+            if constraints and c_type in [ConstraintType.SPE, ConstraintType.CDQN]:
                 # Compute action masks
                 constraints = constraints.select_constrained_action(board.squeeze(),
                                                                     first_player=first_player)
