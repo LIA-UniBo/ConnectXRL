@@ -352,7 +352,7 @@ class DQN(object):
                     ep_metrics_df = pd.DataFrame({'d': episodes_durations,
                                                   'r': episodes_rewards})
 
-                    step_metrics_df = pd.DataFrame({'l': episodes_durations})
+                    step_metrics_df = pd.DataFrame({'l': losses})
 
                     if i_episode % update_plots_frequency == 0:
                         clear_output(wait=True)
