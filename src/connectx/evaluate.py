@@ -82,13 +82,15 @@ def get_win_percentages(player: Union[str, Callable],
     if config is None:
         config = {'rows': 6, 'columns': 7, 'inarow': 4}
 
+    if player_name is None:
+        player_name = player.__name__ if callable(player) else player
+
     for opponent in opponents:
+        opponent_name = opponent.__name__ if callable(opponent) else opponent
+        print(f'{player_name} VS {opponent_name}')
+
         outcomes = evaluate('connectx', [player, opponent], config, [], n_rounds_as_1st_player)
         outcomes += [[b, a] for [a, b] in evaluate('connectx', [opponent, player], config, [], n_rounds_as_2nd_player)]
-
-        opponent_name = opponent.__name__ if callable(opponent) else opponent
-        if player_name is None:
-            player_name = player.__name__ if callable(player) else player
 
         # print(outcomes)
         print()

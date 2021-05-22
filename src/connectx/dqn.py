@@ -1,7 +1,7 @@
 import math
 import os
 import random
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import pylab as pl
 import matplotlib.pyplot as plt
@@ -303,24 +303,7 @@ class DQN(object):
 
             for t in count():
                 # Select and perform an action on the environment
-                action = None
-                constrained_action_performed = True
-
-                # If constraints are enabled use them else if they are not enabled or there are multiple valid actions
-                # exploit the policy
-                if self.constraints is not None and self.constraints.c_type in [ConstraintType.LOGIC_PURE,
-                                                                                ConstraintType.LOGIC_TRAIN]:
-                    action = self.constraints.select_constrained_action(state.squeeze(), self.env.first)
-                if self.constraints is None or \
-                        action is None or \
-                        (self.constraints.c_type in [ConstraintType.LOGIC_PURE,
-                                                     ConstraintType.LOGIC_TRAIN] and action.sum().item() != 1):
-                    action = self.select_action(screen, state, step_eps)
-                    constrained_action_performed = False
-
-                if constrained_action_performed:
-                    # Select action suggested by constraints
-                    action = action.max(0)[1].view(1, 1)
+                action, logic_pure_action = self.select_action(screen, state, step_eps)
 
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
@@ -342,7 +325,7 @@ class DQN(object):
                         push = False
 
                 # Store the transition in memory if match has not ended and constrained action is from LOGIC_PURE method
-                if push and not (constrained_action_performed and self.constraints.c_type is ConstraintType.LOGIC_PURE):
+                if push and not logic_pure_action:
                     self.memory.push(screen, action.to(self.device), new_screen, reward, state)
 
                 # Update old state and image
@@ -422,43 +405,54 @@ class DQN(object):
     def select_action(self,
                       screen: torch.Tensor,
                       state: np.array,
-                      eps: List[float]) -> torch.Tensor:
+                      eps: List[float]) -> Tuple[torch.Tensor, bool]:
         """
         Apply the policy on the observed state to decide the next action or explore by choosing a random action.
 
         :param screen: the current screen
         :param state: the board
         :param eps: the list containing the computed eps (metrics)
-        :return: the chosen action
+        :return: the chosen action and a boolean representing if the action has been chosen by a LOGIC_PURE constraint
         """
         sample = random.random()
-        # Push the agent to exploit after many steps rather than explore
+        # Push the agent to exploit the policy after many steps rather than explore
         eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * \
                         math.exp(-1. * self.steps_done / self.eps_decay)
 
         eps.append(eps_threshold)
-
         self.steps_done += 1
-
-        # Compute constraints if SPE is active
-        if self.constraints is not None and self.constraints.c_type is ConstraintType.SPE:
-            constraints = self.constraints.select_constrained_action(state.squeeze(), self.env.first)
-        else:
-            constraints = None
 
         if sample > eps_threshold:
             # Exploitation
             with torch.no_grad():
-                if constraints is not None:
-                    # Get action values and set to -inf those who are masked out
-                    constrained_action = self.policy_net(screen).squeeze()
-                    constrained_action[constraints == 0] = -np.inf
-                    return constrained_action.max(0)[1].view(1, 1)
+                action = None
+                # If True the action is from LOGIC_PURE
+                logic_pure_action = False
+
+                # Compute constraints if necessary
+                if self.constraints is not None:
+                    constrained_actions = self.constraints.select_constrained_action(state.squeeze(), self.env.first)
                 else:
-                    return self.policy_net(screen).max(1)[1].view(1, 1)
+                    constrained_actions = None
+
+                # LOGIC_PURE and LOGIC_TRAIN constraints and constraints include only single available actions
+                if constrained_actions is not None and \
+                        self.constraints.c_type in [ConstraintType.LOGIC_PURE, ConstraintType.LOGIC_TRAIN] and \
+                        constrained_actions.sum().item() == 1:
+                    action = constrained_actions.max(0)[1].view(1, 1)
+                    logic_pure_action = self.constraints.c_type is ConstraintType.LOGIC_PURE
+                # SPE and CDQN constraints
+                elif constrained_actions is not None and self.constraints.c_type in [ConstraintType.SPE,
+                                                                                     ConstraintType.CDQN]:
+                    action = self.policy_net(screen).squeeze()
+                    action[constrained_actions == 0] = -np.inf
+                    action = action.max(0)[1].view(1, 1)
+
+                # If there are no constraints or the action is still None use the network
+                if constrained_actions is None or action is None:
+                    action = self.policy_net(screen).max(1)[1].view(1, 1)
+
+                return action, logic_pure_action
         else:
-            # Exploration with SPE and without it
-            if constraints is not None:
-                return torch.tensor([[random.choice(torch.nonzero(constraints))]], device=self.device, dtype=torch.long)
-            else:
-                return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
+            # Exploration
+            return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long), False
