@@ -240,7 +240,7 @@ class DQN(object):
                       plot_duration: bool = True,
                       plot_mean_reward: bool = True,
                       plot_actions_count: bool = True,
-                      cumulative_reward_avg_roll_window: int = 100) -> None:
+                      avg_roll_window: int = 100) -> None:
         """
         The DQN training algorithm.
 
@@ -254,7 +254,7 @@ class DQN(object):
         :param plot_duration: if True plot the duration of each episode at the end
         :param plot_mean_reward: if True tracks and plots the average reward at each episode
         :param plot_actions_count: if True plots a bar plot representing the counter of actions taken
-        :param cumulative_reward_avg_roll_window :the window used to print the cumulative reward rolling average
+        :param avg_roll_window :the window used to plot the durations, loss and reward rolling averages
         """
         # Keep track of rewards
         episodes_rewards = []
@@ -262,7 +262,7 @@ class DQN(object):
         episodes_victories = []
         episodes_losts = []
         # Keep track of the episodes' durations
-        episode_durations = []
+        episodes_durations = []
         # Keep track of actions taken
         action_counts = {i: 0 for i in range(1, self.n_actions + 1)}
         # Losses
@@ -342,19 +342,32 @@ class DQN(object):
                                     keep_player_colour=self.keep_player_colour)
 
                 if done:
-                    episode_durations.append(t + 1)
+                    episodes_durations.append(t + 1)
                     episodes_rewards.append(np.sum(step_rewards))
                     eps.append(step_eps[0])
+
+                    ep_metrics_df = pd.DataFrame({'d': episodes_durations,
+                                                  'r': episodes_rewards})
+
+                    step_metrics_df = pd.DataFrame({'l': episodes_durations})
 
                     if i_episode % update_plots_frequency == 0:
                         clear_output(wait=True)
                         axs[0, 0].clear()
-                        lineplot(axs[0, 0], losses, 'Losses', 'Optimization steps', 'Value')
+                        lineplot(axs[0, 0],
+                                 step_metrics_df['l'].rolling(window=avg_roll_window).mean(),
+                                 f'Loss average computed on windows of {avg_roll_window} episodes',
+                                 'Optimization steps',
+                                 'Value')
                         axs[0, 1].clear()
                         lineplot(axs[0, 1], eps, 'Epsilon', 'Episodes', 'Eps')
                         if plot_duration:
                             axs[1, 0].clear()
-                            lineplot(axs[1, 0], episode_durations, 'Episodes durations', 'Episodes', 'Durations')
+                            lineplot(axs[1, 0],
+                                     ep_metrics_df['d'].rolling(window=avg_roll_window).mean(),
+                                     f'Episodes durations average computed on windows of {avg_roll_window} episodes',
+                                     'Episodes',
+                                     'Durations')
                         if plot_mean_reward:
                             axs[1, 1].clear()
                             lineplot(axs[1, 1],
@@ -370,12 +383,9 @@ class DQN(object):
                             countplot(axs[2, 0], list(action_counts.values()), list(action_counts.keys()),
                                       'Actions taken')
 
-                        if cumulative_reward_avg_roll_window:
-                            axs[2, 1].clear()
-                            axs[2, 1].title.set_text(f'Rolling average (over {cumulative_reward_avg_roll_window} '
-                                                     f'episodes) of cumulative rewards.')
-                            axs[2, 1].plot(pd.DataFrame({'r': episodes_rewards})['r'].rolling(
-                                window=cumulative_reward_avg_roll_window).mean())
+                        axs[2, 1].clear()
+                        axs[2, 1].title.set_text(f'Reward average computed on windows of {avg_roll_window} episodes')
+                        axs[2, 1].plot(ep_metrics_df['r'].rolling(window=avg_roll_window).mean())
 
                         # Pause a bit so that plots are updated
                         if self.notebook:
