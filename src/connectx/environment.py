@@ -51,9 +51,9 @@ def show_board_grid(ax: Axes,
     """
     Applies a grid on the axes. Used to add a grid in the game board.
 
+    :param ax: the axes where the grid is applied
     :param rows: the rows on the board
     :param columns: the columns on the board
-    :param ax: the axes where the grid is applied
     :param color: grid color (matplotlib format)
     """
     # Major ticks
@@ -211,7 +211,7 @@ class ConnectXGymEnv(gym.Env):
                                                                 second_player_color]),
                                            first_player=self.first,
                                            keep_player_colour=keep_player_colour)
-            plt.figure(2)
+            fig = plt.figure(2)
             plt.clf()
             if not keep_player_colour:
                 plt.xlabel(f'Player1: {rgb_to_name(first_player_color)}{" (you) " if self.first else " "}'
@@ -225,7 +225,7 @@ class ConnectXGymEnv(gym.Env):
                        vmin=VMIN,
                        vmax=VMAX,
                        aspect='equal')
-            show_board_grid(plt.axes(), self.rows, self.columns)
+            show_board_grid(fig.get_axes()[0], self.rows, self.columns)
 
             # Pause a bit so that plots are updated and visible
             render_waiting_time = get(kwargs, float, 1, path=["render_waiting_time"])
