@@ -165,26 +165,21 @@ class ConnectXGymEnv(gym.Env):
         """
 
         end_status = None
+        draw = False
 
+        if not(all(v for v in self.obs['board'])) and self.obs['board'][int(action)] != 0:
+            reward, done, end_status = self.invalid_reward, True, 'invalid'
         # Check if the action is valid otherwise punish the agent
-        if self.obs['board'][int(action)] == 0:
-            draw = False
-            if all(v for v in self.obs['board']):
-                draw = True
+        else:
             # Perform the action
             self.obs, original_reward, done, _ = self.env.step(int(action))
-            # The draw condition is rechecked since the application of the chosen action could cause a draw game
-            if all(v for v in self.obs['board']):
-                draw = True
             # Modify the reward
             reward = self.reward_shaping(original_reward, done, draw)
             # Set victory status
-            if original_reward == 1:
+            if original_reward == 1.0:
                 end_status = 'victory'
             elif done:
                 end_status = 'lost'
-        else:
-            reward, done, end_status = self.invalid_reward, True, 'invalid'
         # The observed board is returned as a matrix even if internally is used as an array
         return np.array(self.obs['board']).reshape((self.rows, self.columns, 1)), reward, done, \
                {'end_status': end_status}
