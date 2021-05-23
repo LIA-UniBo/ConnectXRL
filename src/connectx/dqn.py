@@ -461,7 +461,8 @@ class DQN(object):
                     action[constrained_actions == 0] = -np.inf
                     action = action.max(0)[1].view(1, 1)
 
-                # If there are no constraints or the action is still None use the network
+                # If there are no constraints or the action is still None due to LOGIC_PURE and LOGIC_TRAIN condition
+                # use the network
                 if constrained_actions is None or action is None:
                     action = self.policy_net(screen).max(1)[1].view(1, 1)
 
