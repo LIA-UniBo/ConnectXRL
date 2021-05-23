@@ -193,7 +193,7 @@ class Constraints(object):
 
         # No critical situations, the mask allow every possible action, otherwise some are masked
         if constrained_action is None:
-            constrained_action = torch.ones(state.shape[1])
+            constrained_action = torch.zeros(state.shape[1])
         else:
             constrained_action = torch.tensor([1 if i == constrained_action else 0 for i in range(state.shape[1])])
 
