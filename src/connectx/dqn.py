@@ -205,8 +205,8 @@ class DQN(object):
                 # Compute action masks
                 constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze(), self.env.first)
                                            for b in batch.board])
-                # Get action values and set to -inf those who are masked out
-                constrained_action = self.target_net(non_final_next_states)
+                # Get action values for non final states and set to -inf those who are masked out
+                constrained_action = self.target_net(non_final_next_states)[non_final_mask]
                 constrained_action[constraints == 0] = -np.inf
                 next_state_values[non_final_mask] = constrained_action.max(1)[0].detach()
             else:
