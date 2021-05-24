@@ -1,4 +1,4 @@
-from random import random
+import random
 from typing import Union, Callable, Optional, Dict, List
 
 import numpy as np
