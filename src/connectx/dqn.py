@@ -167,7 +167,11 @@ class DQN(object):
             # (a final state would've been the one after which simulation ended)
             non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                                     batch.next_state)), device=self.device, dtype=torch.bool)
-            non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
+
+            if not all(v is None for v in batch.next_state):
+                non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
+            else:
+                non_final_next_states = None
             state_batch = torch.cat(batch.state)
             action_batch = torch.cat(batch.action)
             reward_batch = torch.cat(batch.reward)
@@ -200,17 +204,21 @@ class DQN(object):
             # state value or 0 in case the state was final.
             next_state_values = torch.zeros(self.batch_size, device=self.device)
 
-            # CDQN action selection in the Q-update
-            if self.constraints is not None and self.constraints.c_type is ConstraintType.CDQN:
-                # Compute action masks for non final next states
-                constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze(), self.env.first)
-                                           for b in batch.board])[non_final_mask]
-                # Get action values and set to -inf those who are masked out
-                constrained_action = self.target_net(non_final_next_states)
-                constrained_action[constraints == 0] = -np.inf
-                next_state_values[non_final_mask] = constrained_action.max(1)[0].detach()
+            # if all next states are None next_state_values is set to 0 in all cases of constraints                
+            if non_final_next_states is None:
+                next_state_values = 0.0
             else:
-                next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+                # CDQN action selection in the Q-update
+                if self.constraints is not None and self.constraints.c_type is ConstraintType.CDQN:
+                    # Compute action masks for non final next states
+                    constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze(), self.env.first)
+                                               for b in batch.board])[non_final_mask]
+                    # Get action values and set to -inf those who are masked out
+                    constrained_action = self.target_net(non_final_next_states)
+                    constrained_action[constraints == 0] = -np.inf
+                    next_state_values[non_final_mask] = constrained_action.max(1)[0].detach()
+                else:
+                    next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
 
             # Compute the expected Q values
             expected_state_action_values = (next_state_values * self.gamma) + reward_batch
