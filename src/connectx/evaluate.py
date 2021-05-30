@@ -80,7 +80,7 @@ def evaluate_matches(matches: List[Dict[str, int]]):
 
 
 def get_win_percentages(player: Union[str, Callable],
-                        opponents: List[Union[str, Callable]],
+                        opponents: Dict[str, Union[str, Callable]],
                         player_name: Optional[str] = None,
                         config: Optional[Dict] = None,
                         n_rounds_as_1st_player: int = 100,
@@ -103,8 +103,7 @@ def get_win_percentages(player: Union[str, Callable],
     if player_name is None:
         player_name = player.__name__ if callable(player) else player
 
-    for opponent in opponents:
-        opponent_name = opponent.__name__ if callable(opponent) else opponent
+    for opponent_name, opponent in opponents.items():
         print(f'{player_name} VS {opponent_name}')
 
         outcomes = evaluate('connectx', [player, opponent], config, [], n_rounds_as_1st_player)
