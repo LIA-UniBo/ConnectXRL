@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.optim as optim
+import torch.nn as nn
 import torch.nn.functional as F
 from IPython.core.display import clear_output
 
@@ -20,6 +21,8 @@ from src.connectx.constraints import Constraints, ConstraintType
 from src.connectx.environment import ConnectXGymEnv, convert_state_to_image
 from src.connectx.plots import lineplot, countplot
 from src.connectx.policy import CNNPolicy
+
+from torchviz import make_dot
 
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'board'))
 
@@ -67,6 +70,30 @@ class ReplayMemory(object):
         return len(self.memory)
 
 
+class SBRLagrangianDualLoss(nn.Module):
+    """
+    nn.Module used to train the SBR coefficient using the Lagrangian duality.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.sbr_coeff = nn.Parameter(torch.tensor([0.0]))
+
+    def forward(self,
+                state_action_values: torch.Tensor,
+                expected_state_action_values: torch.Tensor,
+                sbr_term: torch.Tensor) -> tuple:
+        """
+        :param state_action_values: the state values
+        :param expected_state_action_values: the values of the non final states computed from the target network
+        :param sbr_term: the sbr term obtained from the constraints
+        :return: the dual loss
+        """
+
+        return -1 * (F.smooth_l1_loss(state_action_values, expected_state_action_values) +
+                     (self.sbr_coeff * sbr_term).mean())
+
+
 class DQN(object):
     def __init__(self,
                  env: ConnectXGymEnv,
@@ -77,18 +104,17 @@ class DQN(object):
                  eps_end: float = 0.01,
                  eps_decay: float = 10000,
                  memory_size: int = 10000,
-                 target_update: int = 500,
+                 target_update: int = 10,
                  learning_rate: float = 1e-2,
                  epochs: int = 2,
                  constraint_type: Optional[ConstraintType] = ConstraintType.LOGIC_TRAIN,
-                 sbr_coeff: float = 0.9,
                  keep_player_colour: bool = True,
                  device: str = 'cpu',
                  notebook: bool = False):
         """
 
         :param env: the Gym environment used to initialize the network
-        :param non_local: TODO
+        :param non_local: whether to use non local blocks or not
         :param batch_size: size of samples from  the memory
         :param gamma: discount factor
         :param eps_start: epsilon-greedy initial value
@@ -99,7 +125,6 @@ class DQN(object):
         :param learning_rate: optimizer learning rate
         :param epochs: number of training epochs
         :param constraint_type: if not None indicates the constraint type
-        :param sbr_coeff: Semantic Based Regularization coefficient (used only when constraint is ConstraintType.SBR)
         :param keep_player_colour: if True the agent color is maintained between player 1 and player 2. e.g. You will
         always be the red player, otherwise the 1st player will be always the red one
         :param device: the device where the training occurs, 'cpu', 'gpu' ...
@@ -118,7 +143,6 @@ class DQN(object):
         self.epochs = epochs
         self.device = device
         self.constraints = Constraints(constraint_type) if constraint_type else None
-        self.sbr_coeff = sbr_coeff
         self.keep_player_colour = keep_player_colour
         self.notebook = notebook
 
@@ -144,6 +168,87 @@ class DQN(object):
         # Steps done is used for action selection and computation of eps threshold
         self.steps_done = 0
 
+        self.lagrangian_dual_loss = SBRLagrangianDualLoss()
+        self.lagrangian_optimizer = optim.Adam(self.lagrangian_dual_loss.parameters(), lr=learning_rate)
+
+    def __compute_state_action_values__(self, transitions: list) -> tuple:
+        """
+        :param transitions: list of Transitions
+        :return: state action values, state action values from the target network of the non final state and SBR terms
+        from constraints
+        """
+
+        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
+        # detailed explanation). This converts batch-array of Transitions
+        # to Transition of batch-arrays.
+        batch = Transition(*zip(*transitions))
+
+        # Compute a mask of non-final states and concatenate the batch elements
+        # (a final state would've been the one after which simulation ended)
+        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                                batch.next_state)), device=self.device, dtype=torch.bool)
+
+        if not all(v is None for v in batch.next_state):
+            non_final_next_states = torch.cat([s if s is not None else ns
+                                               for ns, s in zip(batch.next_state, batch.state)])
+        else:
+            non_final_next_states = None
+        state_batch = torch.cat(batch.state)
+        action_batch = torch.cat(batch.action)
+        reward_batch = torch.cat(batch.reward)
+
+        # Compute Q(s_t, a) - the model computes Q(s_t)
+        state_action_values = self.policy_net(state_batch)
+
+        # SBR regularization term
+        if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
+            constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze(),
+                                                                                         self.env.first)
+                                              for b in batch.board]).to(self.device)
+
+            # The sbr_term penalty is equal to 0 when the chosen action is valid according to action mask
+            # otherwise it is equal to sbr_coeff * Q_value ** 2 of the chosen action
+            zeros = 1 * torch.eq(constraint_actions, torch.zeros(constraint_actions.shape).to(self.device))
+            sbr_term = torch.norm(zeros * state_action_values, 2).unsqueeze(0)
+        else:
+            sbr_term = None
+
+        # Select the columns of the actions taken
+        state_action_values = state_action_values.gather(1, action_batch)
+
+        # Compute V(s_{t+1}) for all next states.
+        # Expected values of actions for non_final_next_states are computed based
+        # on the "older" target_net; selecting their best reward with max(1)[0].
+        # This is merged based on the mask, such that we'll have either the expected
+        # state value or 0 in case the state was final.
+        next_state_values = torch.zeros(self.batch_size, device=self.device)
+
+        # If all next states are None next_state_values is set to 0 in all cases of constraints
+        if non_final_next_states is None:
+            next_state_values = 0.0
+        else:
+            # CDQN action selection in the Q-update
+            if self.constraints is not None and self.constraints.c_type is ConstraintType.CDQN:
+                # Compute action masks for non final next states
+                constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze(), self.env.first)
+                                           for b in batch.board])
+                # Get action values and set to -inf those who are masked out
+                constrained_action = self.target_net(non_final_next_states)
+                constrained_action = torch.where(constraints == 0,
+                                                 torch.full(constrained_action.shape, -np.inf),
+                                                 constrained_action)
+                next_state_values = torch.where(non_final_mask,
+                                                constrained_action.max(1)[0].detach(),
+                                                next_state_values)
+            else:
+                next_state_values = torch.where(non_final_mask,
+                                                self.target_net(non_final_next_states).max(1)[0].detach(),
+                                                next_state_values)
+
+        # Compute the expected Q values
+        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+        return state_action_values, expected_state_action_values, sbr_term
+
     def optimize_model(self, losses: List[float]) -> None:
         """
         Optimize the policy's neural network.
@@ -158,73 +263,15 @@ class DQN(object):
 
         for epoch in range(self.epochs):
             transitions = self.memory.sample(self.batch_size)
-            # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-            # detailed explanation). This converts batch-array of Transitions
-            # to Transition of batch-arrays.
-            batch = Transition(*zip(*transitions))
 
-            # Compute a mask of non-final states and concatenate the batch elements
-            # (a final state would've been the one after which simulation ended)
-            non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                    batch.next_state)), device=self.device, dtype=torch.bool)
+            state_action_values, expected_state_action_values, sbr_term = \
+                self.__compute_state_action_values__(transitions)
 
-            if not all(v is None for v in batch.next_state):
-                non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
-            else:
-                non_final_next_states = None
-            state_batch = torch.cat(batch.state)
-            action_batch = torch.cat(batch.action)
-            reward_batch = torch.cat(batch.reward)
-
-            # Compute Q(s_t, a) - the model computes Q(s_t)
-            state_action_values = self.policy_net(state_batch)
-
-            # SBR regularization term
-            if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
-                constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze(),
-                                                                                             self.env.first)
-                                                  for b in batch.board]).to(self.device)
-
-                # The sbr_term penalty is equal to 0 when the chosen action is valid according to action mask
-                # otherwise it is equal to sbr_coeff * Q_value ** 2 of the chosen action
-                sbr_term = self.sbr_coeff * \
-                           (1 * constraint_actions.gather(1, torch.argmax(state_action_values, dim=1).unsqueeze(dim=1))
-                            == torch.zeros(state_action_values.shape[0]).to(self.device)) * \
-                           state_action_values.gather(1, action_batch) ** 2
-            else:
-                sbr_term = torch.zeros(1)
-
-            # Select the columns of the actions taken
-            state_action_values = state_action_values.gather(1, action_batch)
-
-            # Compute V(s_{t+1}) for all next states.
-            # Expected values of actions for non_final_next_states are computed based
-            # on the "older" target_net; selecting their best reward with max(1)[0].
-            # This is merged based on the mask, such that we'll have either the expected
-            # state value or 0 in case the state was final.
-            next_state_values = torch.zeros(self.batch_size, device=self.device)
-
-            # if all next states are None next_state_values is set to 0 in all cases of constraints                
-            if non_final_next_states is None:
-                next_state_values = 0.0
-            else:
-                # CDQN action selection in the Q-update
-                if self.constraints is not None and self.constraints.c_type is ConstraintType.CDQN:
-                    # Compute action masks for non final next states
-                    constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze(), self.env.first)
-                                               for b in batch.board])[non_final_mask]
-                    # Get action values and set to -inf those who are masked out
-                    constrained_action = self.target_net(non_final_next_states)
-                    constrained_action[constraints == 0] = -np.inf
-                    next_state_values[non_final_mask] = constrained_action.max(1)[0].detach()
-                else:
-                    next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
-
-            # Compute the expected Q values
-            expected_state_action_values = (next_state_values * self.gamma) + reward_batch
-
+            # Get the SBR coefficient without recording gradients
+            with torch.no_grad():
+                sbr_primal = self.lagrangian_dual_loss.sbr_coeff * (sbr_term.mean() if sbr_term is not None else 0)
             # Compute Huber loss
-            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) + sbr_term.mean()
+            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) * sbr_primal
 
             # Track loss
             losses.append(loss.detach().item())
@@ -236,6 +283,23 @@ class DQN(object):
             for param in self.policy_net.parameters():
                 param.grad.data.clamp_(-1, 1)
             self.optimizer.step()
+            # make_dot(loss).render("primal_loss", format="png")
+
+            # Optimize the sbr coefficient using the dual problem of the standard problem in SBR
+            if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
+                # Recompute the values using the updated network
+                state_action_values, expected_state_action_values, sbr_term = \
+                    self.__compute_state_action_values__(transitions)
+
+                # Detach because gradients from the network are not important here
+                dual_loss = self.lagrangian_dual_loss(state_action_values.detach(),
+                                                      expected_state_action_values.unsqueeze(1).detach(),
+                                                      sbr_term.detach())
+                # Optimize the dual for the SBR coefficient
+                self.lagrangian_optimizer.zero_grad()
+                dual_loss.backward()
+                self.lagrangian_optimizer.step()
+                # make_dot(dual_loss).render("dual_loss", format="png")
 
     def training_loop(self,
                       n_episodes_as_1st_player: int = 25,
@@ -466,7 +530,9 @@ class DQN(object):
                 elif constrained_actions is not None and self.constraints.c_type in [ConstraintType.SPE,
                                                                                      ConstraintType.CDQN]:
                     action = self.policy_net(screen).squeeze()
-                    action[constrained_actions == 0] = -np.inf
+                    action = torch.where(constrained_actions == 0,
+                                         torch.full(action.shape, -np.inf),
+                                         action)
                     action = action.max(0)[1].view(1, 1)
 
                 # If there are no constraints or the action is still None due to LOGIC_PURE and LOGIC_TRAIN condition

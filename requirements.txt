@@ -6,6 +6,7 @@ cloudpickle==1.6.0
 cycler==0.10.0
 decorator==4.4.2
 future==0.18.2
+graphviz==0.16
 gym==0.18.0
 idna==2.10
 ipython==7.21.0
@@ -44,6 +45,7 @@ text-unidecode==1.3
 threadpoolctl==2.1.0
 torch==1.8.0
 torchvision==0.9.0
+torchviz==0.0.2
 tqdm==4.58.0
 traitlets==5.0.5
 typing-extensions==3.7.4.3
