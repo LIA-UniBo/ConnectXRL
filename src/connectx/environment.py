@@ -1,4 +1,4 @@
-from typing import Union, Callable, Any, Tuple
+from typing import Union, Callable, Any, Tuple, Optional
 
 import gym
 import numpy as np
@@ -81,27 +81,31 @@ class ConnectXGymEnv(gym.Env):
     def __init__(self,
                  opponent: Union[str, Callable],
                  first: bool,
+                 step_reward: Optional[float] = None,
                  invalid_reward: float = -1.0,
                  victory_reward: float = 1.0,
-                 lost_reward: float = -1.0,
-                 draw_reward: float = 0.5):
+                 lost_reward: float = -1.0):
+        """
+        :param opponent: one of the predefined agents ("random", "negamax") or a custom one (Callable)
+        :param first: if True the agent will be trained as the first player
+        :param step_reward: reward at each step
+        :param invalid_reward: reward get from performing an invalid action
+        :param victory_reward: reward get from winning a match
+        :param lost_reward: reward get from loosing a match
         """
 
-        :param first: if True the agent will be trained as the first player
-        :param opponent: one of the predefined agents ("random", "negamax") or a custom one (Callable)
-        """
         self.opponent = opponent
         self.first = first
-
-        self.invalid_reward = invalid_reward
-        self.victory_reward = victory_reward
-        self.lost_reward = lost_reward
-        self.draw_reward = draw_reward
 
         self.kaggle_env = make('connectx', debug=True)
         self.env = self.kaggle_env.train([None, opponent] if first else [opponent, None])
         self.rows = self.kaggle_env.configuration.rows
         self.columns = self.kaggle_env.configuration.columns
+
+        self.step_reward = step_reward if step_reward is not None else -1 / (self.rows * self.columns)
+        self.invalid_reward = invalid_reward
+        self.victory_reward = victory_reward
+        self.lost_reward = lost_reward
 
         # Gym's action and observation spaces
         # Action space is a discrete discrete distribution between 0 and the number of columns
@@ -134,28 +138,22 @@ class ConnectXGymEnv(gym.Env):
 
     def reward_shaping(self,
                        original_reward: int,
-                       done: bool,
-                       draw: bool) -> float:
+                       done: bool) -> float:
         """
         Modifies original rewards.
 
         :param original_reward: reward from the Kaggle environment
         :param done: True if the game has ended
-        :param draw: True if the game has ended in a draw
         :return: the modified reward
         """
         if original_reward == 1:
             # The agent has won the game
             return self.victory_reward
         elif done:
-            # The game ended in a draw
-            if draw:
-                return self.draw_reward
             # The opponent has won the game
-            else:
-                return self.lost_reward
+            return self.lost_reward
         else:
-            return -1 / (self.rows * self.columns)
+            return self.step_reward
 
     def step(self, action: int) -> Tuple[np.ndarray, float, Union[bool, Any], Union[dict, Any]]:
         """
@@ -165,7 +163,6 @@ class ConnectXGymEnv(gym.Env):
         """
 
         end_status = None
-        draw = False
 
         if not(all(v for v in self.obs['board'])) and self.obs['board'][int(action)] != 0:
             reward, done, end_status = self.invalid_reward, True, 'invalid'
@@ -174,7 +171,7 @@ class ConnectXGymEnv(gym.Env):
             # Perform the action
             self.obs, original_reward, done, _ = self.env.step(int(action))
             # Modify the reward
-            reward = self.reward_shaping(original_reward, done, draw)
+            reward = self.reward_shaping(original_reward, done)
             # Set victory status
             if original_reward == 1.0:
                 end_status = 'victory'
@@ -193,7 +190,13 @@ class ConnectXGymEnv(gym.Env):
         """
         mode = get(kwargs, str, "human", path=["mode"])
         if mode == 'rgb_image':
-            state = np.array(self.kaggle_env.state[0]['observation']['board']).reshape((self.rows, self.columns, 1))
+            # Print a passed state otherwise retrieve the state from the environment
+            state = get(kwargs,
+                        np.ndarray,
+                        np.array(
+                            self.kaggle_env.state[0]['observation']['board']
+                        ).reshape((self.rows, self.columns, 1)),
+                        path=["board"])
 
             keep_player_colour = get(kwargs, bool, True, path=["keep_player_colour"])
             empty_color = get(kwargs, list, [VMAX * 255, VMAX * 255, VMAX * 255], path=["empty_color"])
