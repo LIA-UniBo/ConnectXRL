@@ -107,6 +107,7 @@ class DQN(object):
                  target_update: int = 10,
                  learning_rate: float = 1e-2,
                  epochs: int = 2,
+                 sbr_coeff: Optional[float] = None,
                  constraint_type: Optional[ConstraintType] = ConstraintType.LOGIC_TRAIN,
                  keep_player_colour: bool = True,
                  device: str = 'cpu',
@@ -124,6 +125,7 @@ class DQN(object):
         :param target_update: after how many episodes the target network is updated
         :param learning_rate: optimizer learning rate
         :param epochs: number of training epochs
+        :param sbr_coeff: if not None is used for the SBR constraint regularization
         :param constraint_type: if not None indicates the constraint type
         :param keep_player_colour: if True the agent color is maintained between player 1 and player 2. e.g. You will
         always be the red player, otherwise the 1st player will be always the red one
@@ -141,6 +143,7 @@ class DQN(object):
         self.eps_decay = eps_decay
         self.target_update = target_update
         self.epochs = epochs
+        self.sbr_coeff = sbr_coeff
         self.device = device
         self.constraints = Constraints(constraint_type) if constraint_type else None
         self.keep_player_colour = keep_player_colour
@@ -269,7 +272,8 @@ class DQN(object):
 
             # Get the SBR coefficient without recording gradients
             with torch.no_grad():
-                sbr_primal = self.lagrangian_dual_loss.sbr_coeff * (sbr_term.mean() if sbr_term is not None else 0)
+                sbr_primal = (self.lagrangian_dual_loss.sbr_coeff if self.sbr_coeff is None else self.sbr_coeff) \
+                             * (sbr_term.mean() if sbr_term is not None else 0)
             # Compute Huber loss
             loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) * sbr_primal
 
@@ -285,8 +289,10 @@ class DQN(object):
             self.optimizer.step()
             # make_dot(loss).render("primal_loss", format="png")
 
-            # Optimize the sbr coefficient using the dual problem of the standard problem in SBR
-            if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
+            # Optimize the SBR coefficient using the dual problem of the original optimization problem
+            if self.constraints is not None \
+                    and self.constraints.c_type is ConstraintType.SBR \
+                    and self.sbr_coeff is None:
                 # Recompute the values using the updated network
                 state_action_values, expected_state_action_values, sbr_term = \
                     self.__compute_state_action_values__(transitions)

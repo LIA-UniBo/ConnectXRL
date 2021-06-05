@@ -6,13 +6,13 @@ from src.connectx.opponents import interactive_player
 from src.connectx.policy import CNNPolicy
 
 opponent = interactive_player
-play_as_first_player = False
+play_as_first_player = True
 
-if not play_as_first_player:
+if not play_as_first_player and opponent is interactive_player:
     print('Creation of environment ... Press any button')
 env = ConnectXGymEnv(opponent, play_as_first_player)
 
-if not play_as_first_player:
+if not play_as_first_player and opponent is interactive_player:
     print('Initialize policy ... Press any button')
 
 init_screen = convert_state_to_image(env.reset())
