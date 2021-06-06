@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 from src.connectx.environment import convert_state_to_image, ConnectXGymEnv, show_board_grid, VMIN, VMAX
+from src.connectx.policy import CNNPolicy
 
 
 class CAM_wrapper(nn.Module):
@@ -15,7 +16,7 @@ class CAM_wrapper(nn.Module):
     A wrapper fot a deep-based policy to record gradients used by the CAM-Grad technique.
     """
 
-    def __init__(self, policy_network):
+    def __init__(self, policy_network: CNNPolicy):
         """
 
         :param policy_network: a network to model an agent policy. Must contain a feature_extractor and a fc_head. The
@@ -71,7 +72,7 @@ class CAM_wrapper(nn.Module):
 
 
 def cam_saliency_map(screen: np.array,
-                     policy_network: nn.Module) -> Tuple[torch.Tensor, np.array]:
+                     policy_network: CNNPolicy) -> Tuple[torch.Tensor, np.array]:
     """
     Grad-CAM saliency map.
     https://arxiv.org/pdf/1610.02391.pdf
@@ -123,7 +124,7 @@ def cam_saliency_map(screen: np.array,
 
 
 def vanilla_saliency_map(screen: np.array,
-                         policy_network: nn.Module) -> Tuple[torch.Tensor, np.array]:
+                         policy_network: CNNPolicy) -> Tuple[torch.Tensor, np.array]:
     """
     Vanilla saliency map based on gradients absolute values.
     https://arxiv.org/abs/1312.6034
@@ -148,7 +149,7 @@ def vanilla_saliency_map(screen: np.array,
 
 
 def show_saliency_map(env: ConnectXGymEnv,
-                      policy: torch.nn.Module,
+                      policy: CNNPolicy,
                       saliency_type: str = 'vanilla',
                       num_episodes: int = 10,
                       render_waiting_time: float = 1,

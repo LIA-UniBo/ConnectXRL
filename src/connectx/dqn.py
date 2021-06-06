@@ -1,3 +1,4 @@
+import copy
 import math
 import os
 import random
@@ -20,11 +21,13 @@ from IPython.core.display import clear_output
 from src.connectx.constraints import Constraints, ConstraintType
 from src.connectx.environment import ConnectXGymEnv, convert_state_to_image
 from src.connectx.plots import lineplot, countplot
-from src.connectx.policy import CNNPolicy
+from src.connectx.policy import Policy
 
 from torchviz import make_dot
 
-Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'board'))
+# Screen is the RGB image (3, rows, columns) representing the colorful board
+# Board is the (rows, columns) representing the logical board (containing 1 and 2)
+Transition = namedtuple('Transition', ('screen', 'action', 'next_screen', 'reward', 'board', 'next_board'))
 
 
 class ReplayMemory(object):
@@ -97,7 +100,7 @@ class SBRLagrangianDualLoss(nn.Module):
 class DQN(object):
     def __init__(self,
                  env: ConnectXGymEnv,
-                 non_local: bool = False,
+                 policy: Policy,
                  batch_size: int = 128,
                  gamma: float = 0.99,
                  eps_start: float = 1.0,
@@ -115,7 +118,7 @@ class DQN(object):
         """
 
         :param env: the Gym environment used to initialize the network
-        :param non_local: whether to use non local blocks or not
+        :param policy: the policy to train
         :param batch_size: size of samples from  the memory
         :param gamma: discount factor
         :param eps_start: epsilon-greedy initial value
@@ -155,12 +158,9 @@ class DQN(object):
         self.memory = ReplayMemory(memory_size)
 
         # Policy and optimizer
-        # Get initial state and its size
-        init_screen = convert_state_to_image(self.env.reset())
-        screen_shape = (init_screen.shape[1], init_screen.shape[2], init_screen.shape[3])
 
-        self.policy_net = CNNPolicy(self.n_actions, screen_shape, non_local=non_local).to(device)
-        self.target_net = CNNPolicy(self.n_actions, screen_shape, non_local=non_local).to(device)
+        self.policy_net = policy
+        self.target_net = copy.deepcopy(self.policy_net)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         # Put target network on evaluation mode
         self.target_net.eval()
@@ -189,19 +189,28 @@ class DQN(object):
         # Compute a mask of non-final states and concatenate the batch elements
         # (a final state would've been the one after which simulation ended)
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                batch.next_state)), device=self.device, dtype=torch.bool)
+                                                batch.next_screen)), device=self.device, dtype=torch.bool)
 
-        if not all(v is None for v in batch.next_state):
-            non_final_next_states = torch.cat([s if s is not None else ns
-                                               for ns, s in zip(batch.next_state, batch.state)])
+        # Find non final states (images and boards)
+        if not all(v is None for v in batch.next_screen):
+            non_final_next_states = torch.cat([ns if ns is not None else s
+                                               for ns, s in zip(batch.next_screen, batch.screen)])
         else:
             non_final_next_states = None
-        state_batch = torch.cat(batch.state)
+
+        if not all(v is None for v in batch.next_board):
+            non_final_next_boards = torch.cat([nb if nb is not None else b
+                                               for nb, b in zip(batch.next_board, batch.board)])
+        else:
+            non_final_next_boards = None
+
+        state_batch = torch.cat(batch.screen)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
+        board_batch = torch.cat(batch.board)
 
         # Compute Q(s_t, a) - the model computes Q(s_t)
-        state_action_values = self.policy_net(state_batch)
+        state_action_values = self.policy_net(state_batch, board_batch)
 
         # SBR regularization term
         if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
@@ -236,7 +245,7 @@ class DQN(object):
                 constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze(), self.env.first)
                                            for b in batch.board])
                 # Get action values and set to -inf those who are masked out
-                constrained_action = self.target_net(non_final_next_states)
+                constrained_action = self.target_net(non_final_next_states, non_final_next_boards)
                 constrained_action = torch.where(constraints == 0,
                                                  torch.full(constrained_action.shape, -np.inf),
                                                  constrained_action)
@@ -245,7 +254,8 @@ class DQN(object):
                                                 next_state_values)
             else:
                 next_state_values = torch.where(non_final_mask,
-                                                self.target_net(non_final_next_states).max(1)[0].detach(),
+                                                self.target_net(non_final_next_states,
+                                                                non_final_next_boards).max(1)[0].detach(),
                                                 next_state_values)
 
         # Compute the expected Q values
@@ -407,7 +417,12 @@ class DQN(object):
 
                 # Store the transition in memory if match has not ended and constrained action is from LOGIC_PURE method
                 if push and not logic_pure_action:
-                    self.memory.push(screen, action.to(self.device), new_screen, reward, state)
+                    self.memory.push(screen,
+                                     action.to(self.device),
+                                     new_screen,
+                                     reward,
+                                     torch.from_numpy(state).squeeze().unsqueeze(0),
+                                     torch.from_numpy(new_state).squeeze().unsqueeze(0))
 
                 # Update old state and image
                 # state = new_state
@@ -535,7 +550,8 @@ class DQN(object):
                 # SPE and CDQN constraints
                 elif constrained_actions is not None and self.constraints.c_type in [ConstraintType.SPE,
                                                                                      ConstraintType.CDQN]:
-                    action = self.policy_net(screen).squeeze()
+                    action = self.policy_net(screen,
+                                             torch.from_numpy(state).squeeze().unsqueeze(0)).squeeze()
                     action = torch.where(constrained_actions == 0,
                                          torch.full(action.shape, -np.inf),
                                          action)
@@ -544,7 +560,8 @@ class DQN(object):
                 # If there are no constraints or the action is still None due to LOGIC_PURE and LOGIC_TRAIN condition
                 # use the network
                 if constrained_actions is None or action is None:
-                    action = self.policy_net(screen).max(1)[1].view(1, 1)
+                    action = self.policy_net(screen,
+                                             torch.from_numpy(state).squeeze().unsqueeze(0)).max(1)[1].view(1, 1)
 
                 return action, logic_pure_action
         else:

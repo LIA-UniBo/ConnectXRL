@@ -1,4 +1,4 @@
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 import numpy as np
 import torch
@@ -14,10 +14,32 @@ class Policy(nn.Module):
     Common policy interface. Extends the nn.Module adding a predict function which encapsulates the logic of the game
     and can be used at testing time.
     """
+    def __init__(self, based_on_image):
+        """
+
+        :param based_on_image: if True the policy uses images as input otherwise the board
+        """
+        super(Policy, self).__init__()
+        self.based_on_image = based_on_image
+
+    def forward(self,
+                image: torch.Tensor,
+                board: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+
+        :param image: input image (3 channels, 2D image)
+        :param board: input board (1 channel, 2D board)
+        :return: the board or the image depending on what kind of input the policy expects
+        """
+
+        if self.based_on_image or board is None:
+            return image
+        else:
+            return board
 
     def predict(self,
                 observation: dict,
-                configuration: dict,) -> int:
+                configuration: dict) -> int:
         """
         Logic used to give choose actions at prediction time. The input is similar to the interface required by the
         Kaggle environment.
@@ -48,7 +70,8 @@ class Policy(nn.Module):
 
             # Transform the board to an image and get the action from the network
             with torch.no_grad():
-                action = self.forward(torch.from_numpy(convert_state_to_image(board))).squeeze()
+                action = self.forward(torch.from_numpy(convert_state_to_image(board)),
+                                      torch.from_numpy(board).squeeze().unsqueeze(0)).squeeze()
 
             # Safe policy estimation on the action values
             if constraints and c_type in [ConstraintType.SPE, ConstraintType.CDQN]:
@@ -62,7 +85,54 @@ class Policy(nn.Module):
         return action.max(0)[1].item()
 
 
-class NonLocalBlock(Policy):
+class FeedForward(Policy):
+    """
+    Agent's policy based on feed forward neural network.
+    """
+
+    def __init__(self,
+                 layers_shapes: List[int]):
+        """
+        :param layers_shapes: Feed forward's layers shapes including the input shape (board columns * board rows) and
+        the output shape (actions)
+        """
+
+        super(FeedForward, self).__init__(False)
+        self.action_space_size = layers_shapes[-1]
+        self.input_shape = layers_shapes[0]
+
+        if len(layers_shapes) < 2:
+            raise ValueError('Layers must be at least two, input and output')
+
+        self.fc = nn.Sequential(
+            *[e for sub in [
+                [nn.Linear(pl, nl), nn.ReLU()] for pl, nl in zip(layers_shapes[:-1], layers_shapes[1:])
+            ] for e in sub]
+        )
+
+    def forward(self,
+                image: torch.Tensor,
+                board: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Normalize the input and then use the network to get the action logits
+
+        :param image: input image (3 channels, 2D image)
+        :param board: input board (1 channel, 2D board) containing 1 or 2 depending on the player
+        :return: logits for each action
+        """
+
+        # Get the board and normalize the values
+        x = super().forward(image, board) / 2.0
+
+        # The content is a batch (batch_size, height, width)
+        if len(x.shape) == 3:
+            x = x.view(x.shape[0], x.shape[1] * x.shape[2])
+
+        # Pass batch to fc layers
+        return torch.tanh(self.fc(x))
+
+
+class NonLocalBlock(nn.Module):
     """
     Implementation of Non-Local Block with 4 different pairwise functions but doesn't include subsampling trick.
     https://openaccess.thecvf.com/content_cvpr_2018/papers/Wang_Non-Local_Neural_Networks_CVPR_2018_paper.pdf
@@ -225,7 +295,7 @@ class CNNPolicy(Policy):
         :param action_space_size: number of possible actions
         :param input_shape: Expected input image shape (channels, height, width)
         """
-        super(CNNPolicy, self).__init__()
+        super(CNNPolicy, self).__init__(True)
         self.action_space_size = action_space_size
         self.input_shape = input_shape
         self.non_local = non_local
@@ -249,12 +319,18 @@ class CNNPolicy(Policy):
             nn.Linear(64, self.action_space_size),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self,
+                image: torch.Tensor,
+                board: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
 
-        :param x: input image
+        :param image: input image (3 channels, 2D image)
+        :param board: input board (1 channel, 2D board)
         :return: logits for each action
         """
+
+        x = super().forward(image, board)
+
         # If only 3 dims the batch is created adding one
         if len(x.shape) == 3:
             x = x.unsqueeze(0)
