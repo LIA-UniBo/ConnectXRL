@@ -37,7 +37,7 @@ Transition = namedtuple('Transition', ('screen',
 Statistics = namedtuple('Statistics', ('episodes_rewards',
                                        'episodes_victories',
                                        'episodes_losts',
-                                       'episodes_durations',
+                                       'episodes_performed_actions',
                                        'action_counts',
                                        'losses',
                                        'dual_losses',
@@ -345,7 +345,7 @@ class DQN(object):
                       render_env: bool = False,
                       render_waiting_time: float = 1,
                       update_plots_frequency: int = 100,
-                      plot_duration: bool = True,
+                      plot_performed_actions: bool = True,
                       plot_mean_reward: bool = True,
                       plot_actions_count: bool = True,
                       avg_roll_window: int = 100) -> Statistics:
@@ -359,18 +359,19 @@ class DQN(object):
         :param render_env: If true render the game board at each step
         :param render_waiting_time: paused time between a step and another
         :param update_plots_frequency: how many episodes between each update of the plots
-        :param plot_duration: if True plot the duration of each episode at the end
+        :param plot_performed_actions: if True plot the number of performed actions of each episode at the end
         :param plot_mean_reward: if True tracks and plots the average reward at each episode
         :param plot_actions_count: if True plots a bar plot representing the counter of actions taken
-        :param avg_roll_window :the window used to plot the durations, loss and reward rolling averages
+        :param avg_roll_window: the window used to smooth the plots of the performed actions, losses and reward rolling
+        averages
         """
         # Keep track of rewards
         episodes_rewards = []
         # Keep track of victories and losses
         episodes_victories = []
         episodes_losts = []
-        # Keep track of the episodes' durations
-        episodes_durations = []
+        # Keep track of the episodes' number of performed actions
+        episodes_performed_actions = []
         # Keep track of actions taken
         action_counts = {i: 0 for i in range(1, self.n_actions + 1)}
         # Losses
@@ -459,11 +460,11 @@ class DQN(object):
                                     keep_player_colour=self.keep_player_colour)
 
                 if done:
-                    episodes_durations.append(t + 1)
+                    episodes_performed_actions.append(t + 1)
                     episodes_rewards.append(np.sum(step_rewards))
                     eps.append(step_eps[0])
 
-                    ep_metrics_df = pd.DataFrame({'d': episodes_durations,
+                    ep_metrics_df = pd.DataFrame({'d': episodes_performed_actions,
                                                   'r': episodes_rewards})
 
                     step_metrics_df = pd.DataFrame({'l': losses})
@@ -473,18 +474,19 @@ class DQN(object):
                         axs[0, 0].clear()
                         lineplot(axs[0, 0],
                                  step_metrics_df['l'].rolling(window=avg_roll_window).mean(),
-                                 f'Loss average computed on windows of {avg_roll_window} episodes',
+                                 f'Loss average smoothed with windows of {avg_roll_window} episodes',
                                  'Optimization steps',
                                  'Value')
                         axs[0, 1].clear()
                         lineplot(axs[0, 1], eps, 'Epsilon', 'Episodes', 'Eps')
-                        if plot_duration:
+                        if plot_performed_actions:
                             axs[1, 0].clear()
                             lineplot(axs[1, 0],
                                      ep_metrics_df['d'].rolling(window=avg_roll_window).mean(),
-                                     f'Episodes durations average computed on windows of {avg_roll_window} episodes',
+                                     f'Average of the number of performed actions for episode, smoothed with windows '
+                                     f'of {avg_roll_window} episodes',
                                      'Episodes',
-                                     'Durations')
+                                     'Number of performed actions')
                         if plot_mean_reward:
                             axs[1, 1].clear()
                             lineplot(axs[1, 1],
@@ -501,7 +503,7 @@ class DQN(object):
                                       'Actions taken')
 
                         axs[2, 1].clear()
-                        axs[2, 1].title.set_text(f'Reward average computed on windows of {avg_roll_window} episodes')
+                        axs[2, 1].title.set_text(f'Reward average smoothed with windows of {avg_roll_window} episodes')
                         axs[2, 1].plot(ep_metrics_df['r'].rolling(window=avg_roll_window).mean())
 
                         # Pause a bit so that plots are updated
@@ -532,7 +534,7 @@ class DQN(object):
         return Statistics(episodes_rewards,
                           episodes_victories,
                           episodes_losts,
-                          episodes_durations,
+                          episodes_performed_actions,
                           action_counts,
                           losses,
                           dual_losses,
