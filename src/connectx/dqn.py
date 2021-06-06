@@ -27,7 +27,21 @@ from torchviz import make_dot
 
 # Screen is the RGB image (3, rows, columns) representing the colorful board
 # Board is the (rows, columns) representing the logical board (containing 1 and 2)
-Transition = namedtuple('Transition', ('screen', 'action', 'next_screen', 'reward', 'board', 'next_board'))
+Transition = namedtuple('Transition', ('screen',
+                                       'action',
+                                       'next_screen',
+                                       'reward',
+                                       'board',
+                                       'next_board'))
+
+Statistics = namedtuple('Statistics', ('episodes_rewards',
+                                       'episodes_victories',
+                                       'episodes_losts',
+                                       'episodes_durations',
+                                       'action_counts',
+                                       'losses',
+                                       'dual_losses',
+                                       'eps'))
 
 
 class ReplayMemory(object):
@@ -262,11 +276,14 @@ class DQN(object):
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
         return state_action_values, expected_state_action_values, sbr_term
 
-    def optimize_model(self, losses: List[float]) -> None:
+    def optimize_model(self,
+                       losses: List[float],
+                       dual_losses: List[float]) -> None:
         """
         Optimize the policy's neural network.
 
         :param losses: list keeping track of the loss
+        :param dual_losses: list keeping track of the loss of the dual problem
         """
 
         # If there are not enough samples exit
@@ -311,6 +328,9 @@ class DQN(object):
                 dual_loss = self.lagrangian_dual_loss(state_action_values.detach(),
                                                       expected_state_action_values.unsqueeze(1).detach(),
                                                       sbr_term.detach())
+                # Track loss
+                dual_losses.append(dual_loss.detach().item())
+
                 # Optimize the dual for the SBR coefficient
                 self.lagrangian_optimizer.zero_grad()
                 dual_loss.backward()
@@ -328,7 +348,7 @@ class DQN(object):
                       plot_duration: bool = True,
                       plot_mean_reward: bool = True,
                       plot_actions_count: bool = True,
-                      avg_roll_window: int = 100) -> None:
+                      avg_roll_window: int = 100) -> Statistics:
         """
         The DQN training algorithm.
 
@@ -355,6 +375,7 @@ class DQN(object):
         action_counts = {i: 0 for i in range(1, self.n_actions + 1)}
         # Losses
         losses = []
+        dual_losses = []
         # Eps
         eps = []
 
@@ -429,7 +450,7 @@ class DQN(object):
                 screen = new_screen
                 state = new_state
                 # Perform one step of the optimization (on the target network)
-                self.optimize_model(losses)
+                self.optimize_model(losses, dual_losses)
 
                 # Rendering
                 if render_env:
@@ -507,6 +528,15 @@ class DQN(object):
         # Avoid displaying a duplicate of the last plot
         clear_output(wait=True)
         print('Training complete')
+
+        return Statistics(episodes_rewards,
+                          episodes_victories,
+                          episodes_losts,
+                          episodes_durations,
+                          action_counts,
+                          losses,
+                          dual_losses,
+                          eps)
 
     def select_action(self,
                       screen: torch.Tensor,
