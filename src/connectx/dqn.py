@@ -173,8 +173,8 @@ class DQN(object):
 
         # Policy and optimizer
 
-        self.policy_net = policy
-        self.target_net = copy.deepcopy(self.policy_net)
+        self.policy_net = policy.to(device)
+        self.target_net = copy.deepcopy(self.policy_net).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         # Put target network on evaluation mode
         self.target_net.eval()
@@ -185,7 +185,7 @@ class DQN(object):
         # Steps done is used for action selection and computation of eps threshold
         self.steps_done = 0
 
-        self.lagrangian_dual_loss = SBRLagrangianDualLoss()
+        self.lagrangian_dual_loss = SBRLagrangianDualLoss().to(device)
         self.lagrangian_optimizer = optim.Adam(self.lagrangian_dual_loss.parameters(), lr=learning_rate)
 
     def __compute_state_action_values__(self, transitions: list) -> tuple:
@@ -208,33 +208,31 @@ class DQN(object):
         # Find non final states (images and boards)
         if not all(v is None for v in batch.next_screen):
             non_final_next_states = torch.cat([ns if ns is not None else s
-                                               for ns, s in zip(batch.next_screen, batch.screen)])
+                                               for ns, s in zip(batch.next_screen, batch.screen)]).to(self.device)
         else:
             non_final_next_states = None
-
         if not all(v is None for v in batch.next_board):
             non_final_next_boards = torch.cat([nb if nb is not None else b
-                                               for nb, b in zip(batch.next_board, batch.board)])
+                                               for nb, b in zip(batch.next_board, batch.board)]).to(self.device)
         else:
             non_final_next_boards = None
 
-        state_batch = torch.cat(batch.screen)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
-        board_batch = torch.cat(batch.board)
+        state_batch = torch.cat(batch.screen).to(self.device)
+        action_batch = torch.cat(batch.action).to(self.device)
+        reward_batch = torch.cat(batch.reward).to(self.device)
+        board_batch = torch.cat(batch.board).to(self.device)
 
         # Compute Q(s_t, a) - the model computes Q(s_t)
         state_action_values = self.policy_net(state_batch, board_batch)
-
         # SBR regularization term
         if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
             constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze(),
                                                                                          self.env.first)
-                                              for b in batch.board]).to(self.device)
+                                              for b in batch.board])
 
             # The sbr_term penalty is equal to 0 when the chosen action is valid according to action mask
             # otherwise it is equal to sbr_coeff * Q_value ** 2 of the chosen action
-            zeros = 1 * torch.eq(constraint_actions, torch.zeros(constraint_actions.shape).to(self.device))
+            zeros = 1 * torch.eq(constraint_actions, torch.zeros(constraint_actions.shape)).to(self.device)
             sbr_term = torch.norm(zeros * state_action_values, 2).unsqueeze(0)
         else:
             sbr_term = None
@@ -257,11 +255,11 @@ class DQN(object):
             if self.constraints is not None and self.constraints.c_type is ConstraintType.CDQN:
                 # Compute action masks for non final next states
                 constraints = torch.stack([self.constraints.select_constrained_action(b.squeeze(), self.env.first)
-                                           for b in batch.board])
+                                           for b in batch.board]).to(self.device)
                 # Get action values and set to -inf those who are masked out
                 constrained_action = self.target_net(non_final_next_states, non_final_next_boards)
                 constrained_action = torch.where(constraints == 0,
-                                                 torch.full(constrained_action.shape, -np.inf),
+                                                 torch.full(constrained_action.shape, -np.inf).to(self.device),
                                                  constrained_action)
                 next_state_values = torch.where(non_final_mask,
                                                 constrained_action.max(1)[0].detach(),
@@ -274,6 +272,7 @@ class DQN(object):
 
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+
         return state_action_values, expected_state_action_values, sbr_term
 
     def optimize_model(self,
@@ -302,7 +301,7 @@ class DQN(object):
                 sbr_primal = (self.lagrangian_dual_loss.sbr_coeff if self.sbr_coeff is None else self.sbr_coeff) \
                              * (sbr_term.mean() if sbr_term is not None else 0)
             # Compute Huber loss
-            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) + sbr_primal
+            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) + sbr_primal.to(self.device)
 
             # Track loss
             losses.append(loss.detach().item())
@@ -569,7 +568,7 @@ class DQN(object):
 
                 # Compute constraints if necessary
                 if self.constraints is not None:
-                    constrained_actions = self.constraints.select_constrained_action(state.squeeze(), self.env.first)
+                    constrained_actions = self.constraints.select_constrained_action(state.squeeze(), self.env.first).to(self.device)
                 else:
                     constrained_actions = None
 
@@ -585,7 +584,7 @@ class DQN(object):
                     action = self.policy_net(screen,
                                              torch.from_numpy(state).squeeze().unsqueeze(0)).squeeze()
                     action = torch.where(constrained_actions == 0,
-                                         torch.full(action.shape, -np.inf),
+                                         torch.full(action.shape, -np.inf).to(self.device),
                                          action)
                     action = action.max(0)[1].view(1, 1)
 
