@@ -285,7 +285,7 @@ class DQN(object):
                 sbr_primal = (self.lagrangian_dual_loss.sbr_coeff if self.sbr_coeff is None else self.sbr_coeff) \
                              * (sbr_term.mean() if sbr_term is not None else 0)
             # Compute Huber loss
-            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) * sbr_primal
+            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) + sbr_primal
 
             # Track loss
             losses.append(loss.detach().item())
