@@ -41,6 +41,7 @@ Statistics = namedtuple('Statistics', ('episodes_rewards',
                                        'action_counts',
                                        'losses',
                                        'dual_losses',
+                                       'sbr_coeffs',
                                        'eps'))
 
 
@@ -301,7 +302,8 @@ class DQN(object):
                 sbr_primal = (self.lagrangian_dual_loss.sbr_coeff if self.sbr_coeff is None else self.sbr_coeff) \
                              * (sbr_term.mean() if sbr_term is not None else 0)
             # Compute Huber loss
-            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) + sbr_primal.to(self.device)
+            loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1)) +\
+                   sbr_primal.to(self.device)
 
             # Track loss
             losses.append(loss.detach().item())
@@ -376,6 +378,7 @@ class DQN(object):
         # Losses
         losses = []
         dual_losses = []
+        sbr_coeffs = []
         # Eps
         eps = []
 
@@ -402,10 +405,11 @@ class DQN(object):
             # Initialize the environment and state
             state = self.env.reset()
             # Get image and convert to torch tensor
-            screen = torch.from_numpy(convert_state_to_image(state=state,
-                                                             first_player=first_or_second[i_episode],
-                                                             keep_player_colour=self.keep_player_colour)).to(
-                self.device)
+            screen = torch.from_numpy(
+                convert_state_to_image(state=state,
+                                       first_player=first_or_second[i_episode],
+                                       keep_player_colour=self.keep_player_colour)
+            ).to(self.device)
 
             step_rewards = []
             step_eps = []
@@ -416,10 +420,11 @@ class DQN(object):
 
                 new_state, reward, done, info = self.env.step(action.item())
                 reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
-                new_screen = torch.from_numpy(convert_state_to_image(state=new_state,
-                                                                     first_player=first_or_second[i_episode],
-                                                                     keep_player_colour=self.keep_player_colour)).to(
-                    self.device)
+                new_screen = torch.from_numpy(
+                    convert_state_to_image(state=new_state,
+                                           first_player=first_or_second[i_episode],
+                                           keep_player_colour=self.keep_player_colour)
+                ).to(self.device)
 
                 # Metrics
                 step_rewards.append(reward.detach().item())
@@ -462,6 +467,8 @@ class DQN(object):
                     episodes_performed_actions.append(t + 1)
                     episodes_rewards.append(np.sum(step_rewards))
                     eps.append(step_eps[0])
+                    sbr_coeffs.append(self.sbr_coeff if self.sbr_coeff is not None
+                                      else self.lagrangian_dual_loss.sbr_coeff.item())
 
                     ep_metrics_df = pd.DataFrame({'d': episodes_performed_actions,
                                                   'r': episodes_rewards})
@@ -537,6 +544,7 @@ class DQN(object):
                           action_counts,
                           losses,
                           dual_losses,
+                          sbr_coeffs,
                           eps)
 
     def select_action(self,
@@ -568,7 +576,10 @@ class DQN(object):
 
                 # Compute constraints if necessary
                 if self.constraints is not None:
-                    constrained_actions = self.constraints.select_constrained_action(state.squeeze(), self.env.first).to(self.device)
+                    constrained_actions = self.constraints.select_constrained_action(
+                        state.squeeze(),
+                        self.env.first
+                    ).to(self.device)
                 else:
                     constrained_actions = None
 
