@@ -229,12 +229,14 @@ class DQN(object):
         if self.constraints is not None and self.constraints.c_type is ConstraintType.SBR:
             constraint_actions = torch.stack([self.constraints.select_constrained_action(b.squeeze(),
                                                                                          self.env.first)
-                                              for b in batch.board])
+                                              for b in batch.board]).to(self.device)
 
             # The sbr_term penalty is equal to 0 when the chosen action is valid according to action mask
             # otherwise it is equal to sbr_coeff * Q_value ** 2 of the chosen action
-            zeros = 1 * torch.eq(constraint_actions, torch.zeros(constraint_actions.shape)).to(self.device)
-            sbr_term = torch.norm(zeros * state_action_values, 2).unsqueeze(0)
+            sbr_term = (1 * constraint_actions.gather(1, torch.argmax(state_action_values, dim=1)
+                                                      .unsqueeze(dim=1).to(self.device))
+                        == torch.zeros(state_action_values.shape[0]).to(self.device)) * \
+                       state_action_values.gather(1, action_batch) ** 2
         else:
             sbr_term = None
 
