@@ -441,7 +441,7 @@ class DQN(object):
                         push = False
                     elif info['end_status'] == 'invalid':
                         episodes_losts.append(i_episode)
-                    new_screen = None
+                        new_screen = None
 
                 # Store the transition in memory if match has not ended and constrained action is from LOGIC_PURE method
                 if push and not logic_pure_action:
