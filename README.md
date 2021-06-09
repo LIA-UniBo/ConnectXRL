@@ -16,6 +16,28 @@ to install all the dependencies.
 
 We are interested in exploring how constraints can be used in Deep Learning, in particular, in Deep Reinforcement Learning.
 
+### Related code
+
+    ./
+    ├── connectxrl_constraints.ipynb (notebook presenting the constraints)
+    ├── models (model weights)
+    └── src
+        ├── connectx
+        │   ├── constraints.py (constraints logic)
+        │   ├── dqn.py (training logic)
+        │   ├── environment.py (environment related code)
+        │   ├── evaluate.py (code to test the agents)
+        │   ├── __init__.py
+        │   ├── opponents.py (some custom opponents)
+        │   ├── plots.py (code to plot metrics)
+        │   └── policy.py (neural networks and policy interfaces)
+        ├── test
+        │   ├── dqn.py (train an agent using DQN)
+        │   ├── __init__.py
+        │   └── play.py (play against a trained agent)
+        └── __init__.py
+
+
 ### Bibliography
 
 Deep Constrained Q-learning
