@@ -7,29 +7,35 @@ from src.connectx.policy import FeedForward, CNNPolicy
 # Example or training a model #
 ###############################
 
-device = 'cpu'
 
-# Environment
-env = ConnectXGymEnv('random', True)
+def main():
+    device = 'cpu'
 
-# Policy
-# Get initial state and its size
-init_screen = convert_state_to_image(env.reset())
-screen_shape = (init_screen.shape[1], init_screen.shape[2], init_screen.shape[3])
-cnn_policy = CNNPolicy(env.action_space.n, screen_shape, non_local=False).to(device)
+    # Environment
+    env = ConnectXGymEnv('random', True)
 
-ffnn_policy = FeedForward([6 * 7, 32, 32, 7])
+    # Policy
+    # Get initial state and its size
+    init_screen = convert_state_to_image(env.reset())
+    screen_shape = (init_screen.shape[1], init_screen.shape[2], init_screen.shape[3])
+    cnn_policy = CNNPolicy(env.action_space.n, screen_shape, non_local=False).to(device)
 
-# Training algorithm
-dqn = DQN(env,
-          ffnn_policy,
-          constraint_type=ConstraintType.SBR)
+    ffnn_policy = FeedForward([6 * 7, 32, 32, 7])
 
-# Train
-dqn.training_loop(n_episodes_as_1st_player=100,
-                  n_episodes_as_2nd_player=100,
-                  render_env=False,
-                  save_path='../',
-                  update_plots_frequency=200)
+    # Training algorithm
+    dqn = DQN(env,
+              ffnn_policy,
+              constraint_type=ConstraintType.SBR)
 
-input('Training concluded, press any key to close ...')
+    # Train
+    dqn.training_loop(n_episodes_as_1st_player=100,
+                      n_episodes_as_2nd_player=100,
+                      render_env=False,
+                      save_path='./',
+                      update_plots_frequency=200)
+
+    input('Training concluded, press any key to close ...')
+
+
+if __name__ == "__main__":
+    main()
