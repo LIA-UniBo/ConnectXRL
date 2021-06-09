@@ -31,4 +31,4 @@ def interactive_player(observation: dict,
     :return: action performed
     """
 
-    return int(input(f'Decide an action ({0}-{configuration["columns"]}): ')) - 1
+    return int(input(f'Decide an action ({1}-{configuration["columns"]}): ')) - 1
