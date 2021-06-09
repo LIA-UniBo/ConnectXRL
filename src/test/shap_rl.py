@@ -39,5 +39,7 @@ show_recordings(state_recording[0], action_recording[0])
 
 shap_values = explain(agent, state_recording, action_recording)
 
-print("Play recordings")
-show_recordings(shap_values[0], action_recording[0])
+for i, (sr, ar) in enumerate(zip(state_recording, action_recording)):
+    print(f'Play recording {i + 1}')
+    show_recordings(sr, ar)
+

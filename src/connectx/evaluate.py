@@ -204,7 +204,22 @@ def record_matches(env: ConnectXGymEnv,
                            keep_player_colour=keep_player_colour)
 
             # Update env
-            state, _, done, _ = env.step(action)
+            state, _, done, info = env.step(action)
+
+            if done:
+                if info['end_status'] == 'victory':
+                    print('\nThe trained agent won!\n')
+                elif info['end_status'] == 'lost':
+                    print('\nThe trained agent lost!\n')
+                elif info['end_status'] == 'invalid':
+                    print('\nThe trained agent performed an invalid action!\n')
+
+                if render_env:
+                    env.render(board=state,
+                               mode='rgb_image',
+                               render_waiting_time=1,
+                               keep_player_colour=keep_player_colour)
+                break
 
             # Update results
             action_recording[m] = torch.cat((action_recording[m], torch.Tensor([action])))
@@ -218,22 +233,7 @@ def record_matches(env: ConnectXGymEnv,
                                                              first_player=play_as_first_player,
                                                              keep_player_colour=keep_player_colour)).to(device)
 
-    if render_env and play_as_first_player:
-        # Create the board to render
-        render_state = state.copy()
-        ir = 0
-        for r in render_state:
-            # Spot column to update
-            if r[action] != [0]:
-                break
-            ir += 1
-        if ir - 1 >= 0:
-            render_state[ir - 1, action] = [1] if play_as_first_player else [2]
-        env.render(board=render_state,
-                   mode='rgb_image',
-                   render_waiting_time=1,
-                   keep_player_colour=keep_player_colour)
-    input('\n - Game finished! -')
+        input('\n - Game finished! -')
     return state_recording, action_recording
 
 

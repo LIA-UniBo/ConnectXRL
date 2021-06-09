@@ -31,5 +31,4 @@ def interactive_player(observation: dict,
     :return: action performed
     """
 
-    return int(input(f'{np.array(observation["board"]).reshape((configuration["rows"], configuration["columns"]))}\n'
-                     f'Decide an action ({0}-{configuration["columns"]}): ')) - 1
+    return int(input(f'Decide an action ({0}-{configuration["columns"]}): ')) - 1
