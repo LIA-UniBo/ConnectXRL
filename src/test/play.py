@@ -37,16 +37,24 @@ constraint_type = int(input('Insert number of the agent you want to play:\n'
                             f'{ConstraintType.LOGIC_TRAIN.value} - {ConstraintType.LOGIC_TRAIN.name}\n'
                             f'{ConstraintType.SBR.value} - {ConstraintType.SBR.name}\n'
                             f'{ConstraintType.SPE.value} - {ConstraintType.SPE.name}\n'
-                            f'{ConstraintType.CDQN.value} - {ConstraintType.CDQN.name}\n'))
+                            f'{ConstraintType.CDQN.value} - {ConstraintType.CDQN.name}\n'
+                            f'6 - curriculum\n'))
 
 device = 'cpu'
-weight_path = '../../models/' + (ConstraintType(constraint_type).name if constraint_type > 0 else 'dqn').lower() + '.pt'
+if constraint_type == 6:
+    weight_path = '../../models/curriculum.pt'
+    c_type = ConstraintType(5)
+else:
+    weight_path = '../../models/' + (
+        ConstraintType(constraint_type).name if 6 > constraint_type > 0 else 'dqn').lower() + '.pt'
+    c_type = ConstraintType(constraint_type) if constraint_type > 0 else None
+
 agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
 config = {'columns': 7,
           'rows': 6,
           'inarow': 4,
-          'c_type': ConstraintType(constraint_type) if constraint_type > 0 else None}
+          'c_type': c_type}
 
 state_recording, action_recording = record_matches(env,
                                                    agent,
