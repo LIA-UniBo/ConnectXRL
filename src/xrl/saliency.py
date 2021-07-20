@@ -3,12 +3,18 @@ from typing import Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
+from torchvision.transforms import Resize
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from lime.wrappers.scikit_image import SegmentationAlgorithm
+from skimage.segmentation import mark_boundaries
 
 from src.connectx.environment import convert_state_to_image, ConnectXGymEnv, show_board_grid, VMIN, VMAX
 from src.connectx.policy import CNNPolicy
+
+from lime import lime_image
 
 
 class CAM_wrapper(nn.Module):
@@ -143,9 +149,93 @@ def vanilla_saliency_map(screen: np.array,
 
     # Compute gradients
     action[0, i].backward()
+    saliency_map = torch.abs(screen.grad).max(1)[0].squeeze()
+    print("max_grad:", torch.max(saliency_map))
+    print("min_grad:", torch.min(saliency_map))
 
-    print(torch.abs(screen.grad))
-    return action, torch.abs(screen.grad).max(1)[0].squeeze().data.numpy()
+    return action, (saliency_map - torch.min(saliency_map)) / (torch.max(saliency_map) - torch.min(saliency_map)).data.numpy()
+
+
+class LIME_wrapper(nn.Module):
+    """
+    A wrapper fot a deep-based policy to perform LIME explanation.
+    Step 1: Generate random perturbations for input image
+    Step 2: Predict class for perturbations
+    Step 3: Compute weights (importance) for the perturbations
+    Step 4: Fit a explainable linear model using the perturbations, predictions and weights
+    """
+
+    def __init__(self, policy_network: CNNPolicy):
+        """
+
+        :param policy_network: a network to model an agent policy. Must contain a feature_extractor and a fc_head. The
+        feature extractor is expected to be a cnn.
+        """
+        super(LIME_wrapper, self).__init__()
+        self.explainer = lime_image.LimeImageExplainer()
+
+        # The segmentation algorithm is used to identify superpixels
+        # 'quickshift': Given an image, the algorithm calculates a forest of pixels whose branches are labeled with a
+        # distance value. This specifies a hierarchical segmentation of the image with segments corresponding to
+        # subtrees. Useful superpixels can be identified by cutting the branches whose distance label is above a given
+        # threshold.
+        # 'slic': This algorithm generates superpixels by clustering pixels based on their color similarity and
+        # proximity in the image plane.
+        # 'felzenszwalb': Edges are considered in increasing order of weight; their endpoint pixels are merged into a
+        # region if this doesn't cause a cycle in the graph and if the pixels are similar to the existing regions pixels
+
+        self.segmentation_fn = SegmentationAlgorithm('slic',
+                                                     kernel_size=2,
+                                                     start_label=1,
+                                                     max_dist=200,
+                                                     ratio=0.2,
+                                                     random_seed=42)
+        self.net = policy_network
+        self.net.eval()
+
+    def forward(self, x):
+        x = torch.tensor(x, dtype=torch.float32)
+        # If only 3 dims the batch is created adding one
+        if len(x.shape) == 3:
+            x = x.unsqueeze(0)
+
+        x = torch.reshape(x, (x.shape[0], x.shape[3], x.shape[1], x.shape[2]))
+        x = F.softmax(self.net(x), dim=1).type(torch.float64).detach().numpy()
+
+        return x
+
+    def lime_explanation(self,
+                         screen: np.array) -> Tuple[torch.Tensor, np.array]:
+        """
+        https://arxiv.org/pdf/1602.04938v1.pdf
+
+        :param screen: the game board screen image
+        :return: the action logits from the network and the mask
+        """
+        action = self.net(screen)
+        img = np.transpose(np.squeeze(np.array(screen), axis=0), (1, 2, 0)).astype('float64')
+
+        explanation = self.explainer.explain_instance(img,
+                                                      self.forward,
+                                                      batch_size=1,
+                                                      segmentation_fn=self.segmentation_fn,
+                                                      top_labels=7,
+                                                      hide_color=0,
+                                                      num_samples=42)
+        temp, mask = explanation.get_image_and_mask(explanation.top_labels[0],
+                                                    positive_only=True,
+                                                    num_features=4,
+                                                    hide_rest=False)
+        """
+        img_boundry1 = mark_boundaries(temp, mask)
+        plt.imshow(temp)
+        plt.show()
+        plt.imshow(mask)
+        plt.show()
+        plt.imshow(img_boundry1)
+        plt.show()
+        """
+        return action, mask
 
 
 def show_saliency_map(env: ConnectXGymEnv,
@@ -169,6 +259,8 @@ def show_saliency_map(env: ConnectXGymEnv,
     # Network setup
     if saliency_type == 'cam':
         policy = CAM_wrapper(policy)
+    elif saliency_type == 'lime':
+        policy = LIME_wrapper(policy)
     policy.eval()
 
     # Rendering setup
@@ -218,6 +310,10 @@ def show_saliency_map(env: ConnectXGymEnv,
                 action, saliency_map = vanilla_saliency_map(screen, policy)
             elif saliency_type == 'cam':
                 action, saliency_map = cam_saliency_map(screen, policy)
+                saliency_map = Resize(size=(screen.shape[2], screen.shape[3]))(torch.from_numpy(saliency_map).
+                                                                               unsqueeze(dim=0)).numpy().squeeze()
+            elif saliency_type == 'lime':
+                action, saliency_map = policy.lime_explanation(screen)
             else:
                 raise ValueError(f'Unknown saliency_type: {saliency_type}!')
 
