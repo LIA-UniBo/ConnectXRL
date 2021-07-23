@@ -185,10 +185,11 @@ class LIME_wrapper(nn.Module):
         # region if this doesn't cause a cycle in the graph and if the pixels are similar to the existing regions pixels
 
         self.segmentation_fn = SegmentationAlgorithm('slic',
-                                                     kernel_size=2,
+                                                     kernel_size=(3, 3),
                                                      start_label=1,
-                                                     max_dist=200,
-                                                     ratio=0.2,
+                                                     compactness=0.01,
+                                                     min_size_factor=0,
+                                                     n_segments=20,
                                                      random_seed=42)
         self.net = policy_network
         self.net.eval()
@@ -215,16 +216,17 @@ class LIME_wrapper(nn.Module):
         action = self.net(screen)
         img = np.transpose(np.squeeze(np.array(screen), axis=0), (1, 2, 0)).astype('float64')
 
+        # hide_color is set to 1 in order to perturb images with white pixels
         explanation = self.explainer.explain_instance(img,
                                                       self.forward,
                                                       batch_size=1,
+                                                      hide_color=1,
                                                       segmentation_fn=self.segmentation_fn,
                                                       top_labels=7,
-                                                      hide_color=0,
-                                                      num_samples=42)
+                                                      num_samples=100)
         temp, mask = explanation.get_image_and_mask(explanation.top_labels[0],
-                                                    positive_only=True,
-                                                    num_features=4,
+                                                    positive_only=False,
+                                                    num_features=3,
                                                     hide_rest=False)
         """
         img_boundry1 = mark_boundaries(temp, mask)

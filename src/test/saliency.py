@@ -12,7 +12,7 @@ agent = CNNPolicy(env.action_space.n,
                   screen_shape)
 
 device = 'cpu'
-weight_path = 'models/curriculum.pt'
+weight_path = 'models/sbr.pt'
 agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
-show_saliency_map(env, agent, 'cam', 30, device=device, above=False)
+show_saliency_map(env, agent, 'lime', 30, device=device, above=False)
