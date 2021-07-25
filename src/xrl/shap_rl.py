@@ -7,25 +7,34 @@ from src.connectx.policy import Policy
 
 def explain(policy: Policy,
             state_recording: list,
-            action_recording: list) -> List[torch.Tensor]:
+            state_test: list) -> List[torch.Tensor]:
     """
 
     :param policy: the policy involved
-    :param state_recording: a list with tensors containing the states seen during each match
-    :param action_recording: TODO
-    :return: the shapley values associated to each action for each state seen during the matches
+    :param state_recording: a list with tensors containing the sequence of states seen in each match used to train the
+    explainer
+    :param state_test: a list with with tensors containing the sequence of states seen in each match used to test the
+    explainer
+    TODO :param action_recording: a list with tensors containing the sequence of actions performed in each match
+    :return: the shapley values associated to each action for each state seen in the matches
     """
 
     # If the input is a list, the states are concatenated
-    if type(state_recording) == type(action_recording) == list:
+    if type(state_recording) == type(state_test) == list:
         state_recording = torch.cat(state_recording)
+        state_test = torch.cat(state_test)
 
     # Create explainer
     explainer = shap.DeepExplainer(policy, state_recording)
-    shap_values = explainer.shap_values(state_recording)
 
-    # A list with the size of possible actions containing as Numpy arrays the shapley values for each state. Here the
-    # Numpy array is transformed to torch.
-    shap_values = list(map(lambda x: torch.from_numpy(x), shap_values))
+    # Get a list with the length of possible actions, containing the shapley values as Numpy arrays for each encountered
+    # state.
+    shap_values = explainer.shap_values(state_test)
+
+    # The Numpy arrays are transformed to PyTorch's tensors.
+    # shap_values = list(map(lambda x: torch.from_numpy(x), shap_values))
+
+    shap.image_plot([sv.transpose([0, 2, 3, 1]) for sv in shap_values],
+                    state_test.data.numpy().transpose([0, 2, 3, 1]))
 
     return shap_values

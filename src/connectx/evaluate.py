@@ -133,6 +133,7 @@ def record_matches(env: ConnectXGymEnv,
                    play_as_first_player: bool = True,
                    num_matches: int = 1,
                    render_env: bool = True,
+                   interactive_progress: bool = True,
                    keep_player_colour: bool = True,
                    device: str = 'cpu') -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
     """
@@ -144,6 +145,7 @@ def record_matches(env: ConnectXGymEnv,
     :param play_as_first_player: if True the agent is the first player
     :param num_matches: the number of matches
     :param render_env: if True the environment is rendered
+    :param interactive_progress: if True, the user must confirm to continue after each match
     :param keep_player_colour: if True the agent color is maintained between player 1 and player 2. e.g. Your agent
     will always be the red player, otherwise the 1st player will always be the red one
     :param device: the device where the recording occurs, 'cpu', 'gpu' ...
@@ -233,7 +235,8 @@ def record_matches(env: ConnectXGymEnv,
                                                              first_player=play_as_first_player,
                                                              keep_player_colour=keep_player_colour)).to(device)
 
-        input('\n - Game finished! -')
+        if interactive_progress:
+            input('\n - Game finished! -')
     return state_recording, action_recording
 
 

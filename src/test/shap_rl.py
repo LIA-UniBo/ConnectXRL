@@ -6,40 +6,46 @@ from src.connectx.opponents import interactive_player
 from src.connectx.policy import CNNPolicy
 from src.xrl.shap_rl import explain
 
-opponent = interactive_player
-play_as_first_player = True
 
-if not play_as_first_player and opponent is interactive_player:
-    print('Creation of environment ... Press any button')
-env = ConnectXGymEnv(opponent, play_as_first_player)
+def main():
+    opponent = 'random'
+    play_as_first_player = True
 
-if not play_as_first_player and opponent is interactive_player:
-    print('Initialize policy ... Press any button')
+    if not play_as_first_player and opponent is interactive_player:
+        print('Creation of environment ... Press any button')
+    env = ConnectXGymEnv(opponent, play_as_first_player)
 
-init_screen = convert_state_to_image(env.reset())
-screen_shape = (init_screen.shape[1], init_screen.shape[2], init_screen.shape[3])
+    if not play_as_first_player and opponent is interactive_player:
+        print('Initialize policy ... Press any button')
 
-agent = CNNPolicy(env.action_space.n,
-                  screen_shape)
+    init_screen = convert_state_to_image(env.reset())
+    screen_shape = (init_screen.shape[1], init_screen.shape[2], init_screen.shape[3])
 
-device = 'cpu'
-weight_path = './weights_5000.pt'
-agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
+    agent = CNNPolicy(env.action_space.n,
+                      screen_shape)
 
-state_recording, action_recording = record_matches(env,
-                                                   agent,
-                                                   play_as_first_player=play_as_first_player,
-                                                   num_matches=1,
-                                                   render_env=True,
-                                                   keep_player_colour=True)
+    device = 'cpu'
+    weight_path = './models/curriculum.pt'
+    agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
-print(state_recording, action_recording)
+    state_recording, action_recording = record_matches(env,
+                                                       agent,
+                                                       play_as_first_player=play_as_first_player,
+                                                       num_matches=20,
+                                                       render_env=False,
+                                                       interactive_progress=False,
+                                                       keep_player_colour=True)
 
-show_recordings(state_recording[0], action_recording[0])
+    print(state_recording, action_recording)
 
-shap_values = explain(agent, state_recording, action_recording)
+    shap_values = explain(agent, state_recording[:-1], state_recording[-1:])
 
-for i, (sr, ar) in enumerate(zip(state_recording, action_recording)):
-    print(f'Play recording {i + 1}')
-    show_recordings(sr, ar)
+    """
+    for i, (sr, ar) in enumerate(zip(state_recording, action_recording)):
+        print(f'Play recording {i + 1}')
+        show_recordings(sr, ar)
+    """
 
+
+if __name__ == "__main__":
+    main()
