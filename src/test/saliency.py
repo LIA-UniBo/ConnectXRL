@@ -26,7 +26,7 @@ def main():
     agent = CNNPolicy(env.action_space.n,
                       screen_shape)
     device = 'cpu'
-    weight_path = '../../models/cdqn.pt'
+    weight_path = './models/curriculum.pt'
     agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
     # Go
@@ -37,7 +37,7 @@ def main():
 
     show_saliency_map(env,
                       agent,
-                      'vanilla',
+                      'lime',
                       see_saliency_on_input=False,
                       num_episodes=30,
                       render_waiting_time=render_waiting_time,
