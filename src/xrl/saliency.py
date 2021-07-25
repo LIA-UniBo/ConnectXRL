@@ -6,8 +6,11 @@ import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
+from matplotlib.figure import Figure
+from matplotlib.image import AxesImage
 
 from src.connectx.environment import convert_state_to_image, ConnectXGymEnv, show_board_grid, VMIN, VMAX
+from src.connectx.opponents import interactive_player
 from src.connectx.policy import CNNPolicy
 
 
@@ -91,7 +94,6 @@ def cam_saliency_map(screen: np.array,
 
     # Get the gradients from the model
     gradients = policy_network.get_activations_gradient()
-    print(torch.sum(gradients))
 
     # Globally pool the gradients obtaining a value for each channel
     pooled_gradients = torch.mean(gradients, dim=[0, 2, 3])
@@ -119,7 +121,6 @@ def cam_saliency_map(screen: np.array,
         plt.matshow(saliency_map.squeeze())
     """
 
-    print(torch.sum(saliency_map))
     return action, saliency_map.squeeze().data.numpy()
 
 
@@ -144,15 +145,15 @@ def vanilla_saliency_map(screen: np.array,
     # Compute gradients
     action[0, i].backward()
 
-    print(torch.abs(screen.grad))
     return action, torch.abs(screen.grad).max(1)[0].squeeze().data.numpy()
 
 
 def show_saliency_map(env: ConnectXGymEnv,
                       policy: CNNPolicy,
                       saliency_type: str = 'vanilla',
+                      see_saliency_on_input: bool = True,
                       num_episodes: int = 10,
-                      render_waiting_time: float = 1,
+                      render_waiting_time: float = 0.001,
                       device: str = 'cpu',
                       above: bool = True) -> None:
     """
@@ -160,11 +161,32 @@ def show_saliency_map(env: ConnectXGymEnv,
     :param env: Gym environment
     :param policy: policy (network)
     :param saliency_type: type of saliency ('vanilla', 'cam')
+    :param see_saliency_on_input: if True the saliency map is applied to the input that the policy actually see,
+    otherwise it is applied to the resulting image resulting from the choice of the action (relative to the saliency
+    map) from the policy. If True the saliency is removed when the enemy is playing, to get the best from this option
+    consider a longer render_waiting_time.
     :param num_episodes: how many episodes
-    :param render_waiting_time: if 0 or None you can skip frames manually otherwise frames are displayed automatically
+    :param render_waiting_time: seconds of pause at each rendering
     :param device: the device used to store tensors
     :param above: if True the saliency map is applied over the board
     """
+
+    def update_rendering(s, sm):
+        # Update rendering
+        im_g.set_data(s.squeeze().permute(1, 2, 0).data.numpy())
+        im_s.set_data(sm)
+        fig.canvas.draw_idle()
+        plt.pause(render_waiting_time)
+
+    def extract_saliency_map():
+        # Extract saliency map in the correct way
+        if saliency_type == 'vanilla':
+            a, sm = vanilla_saliency_map(screen, policy)
+        elif saliency_type == 'cam':
+            a, sm = cam_saliency_map(screen, policy)
+        else:
+            raise ValueError(f'Unknown saliency_type: {saliency_type}!')
+        return a, sm
 
     # Network setup
     if saliency_type == 'cam':
@@ -186,6 +208,8 @@ def show_saliency_map(env: ConnectXGymEnv,
     # Loop
     for i_episode in range(num_episodes):
         # Initialize the environment and state
+        if not env.first and env.opponent is interactive_player:
+            print('\n - Table is empty, make your first move! -')
         state = env.reset()
         # Get image and convert to torch tensor
         screen = torch.from_numpy(convert_state_to_image(state)).to(device)
@@ -212,31 +236,47 @@ def show_saliency_map(env: ConnectXGymEnv,
 
             plt.colorbar(im_s, cax=cax)
 
-        for t in count():
-            # Extract saliency map
-            if saliency_type == 'vanilla':
-                action, saliency_map = vanilla_saliency_map(screen, policy)
-            elif saliency_type == 'cam':
-                action, saliency_map = cam_saliency_map(screen, policy)
+        for _ in count():
+            # See saliency on the input state
+            if not see_saliency_on_input:
+                action, saliency_map = extract_saliency_map()
             else:
-                raise ValueError(f'Unknown saliency_type: {saliency_type}!')
+                _, saliency_map = extract_saliency_map()
+                action = policy(screen)
+                saliency_map.fill(0)
 
-            # Update rendering
-            im_g.set_data(screen.squeeze().permute(1, 2, 0).data.numpy())
-            im_s.set_data(saliency_map)
-            fig.canvas.draw_idle()
-            if render_waiting_time:
-                plt.pause(render_waiting_time)
-            else:
-                plt.pause(0.000001)
-                input(f"{t}/{i_episode} Press Enter to continue...")
+            # Render the board as updated by the agent
+            # Create the board to render
+            render_state = state.copy()
+            ir = 0
+            for r in render_state:
+                # Spot column to update
+                if r[action.max(1)[1].view(1, 1)] != [0]:
+                    break
+                ir += 1
+            if ir - 1 >= 0:
+                render_state[ir - 1, action.max(1)[1].view(1, 1)] = [1] if env.first else [2]
+
+            # Render the board after the policy has played
+            update_rendering(torch.from_numpy(convert_state_to_image(render_state)).to(device),
+                             saliency_map)
 
             action = action.max(1)[1].view(1, 1)
             # Continue the game
             new_state, _, done, _ = env.step(action.item())
             new_screen = torch.from_numpy(convert_state_to_image(new_state)).to(device)
 
+            # Update screen and state
             screen = new_screen
+            state = new_state
+
+            # See saliency together with the output state
+            if see_saliency_on_input:
+                action, saliency_map = extract_saliency_map()
+
+            # Render the board after the opponent has played
+            update_rendering(screen,
+                             saliency_map)
 
             if done:
                 break
