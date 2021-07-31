@@ -154,90 +154,94 @@ def record_matches(env: ConnectXGymEnv,
     actions performed
     """
 
-    if configuration is None:
-        configuration = {'columns': 7, 'rows': 6, 'inarow': 4, 'c_type': None}
+    with torch.no_grad():
+        if configuration is None:
+            configuration = {'columns': 7, 'rows': 6, 'inarow': 4, 'c_type': None}
 
-    # Results
-    action_recording = [torch.Tensor([]) for _ in range(num_matches)]
-    state_recording = [torch.Tensor([]) for _ in range(num_matches)]
+        # Results
+        action_recording = [torch.Tensor([]) for _ in range(num_matches)]
+        state_recording = [torch.Tensor([]) for _ in range(num_matches)]
 
-    for m in tqdm(range(num_matches)):
+        for m in range(num_matches) if interactive_progress else tqdm(range(num_matches)):
+            if interactive_progress:
+                print(f'match {m + 1}/{num_matches}')
 
-        # Change first or second player
-        if not play_as_first_player and env.opponent is interactive_player:
-            print('\n - Game is on ... Press any button -')
-        env.set_first(play_as_first_player)
-        # Initialize the environment and state
-        if not play_as_first_player and env.opponent is interactive_player:
-            print('\n - Table is empty, make your first move! -')
-        state = env.reset()
-        # Get image and convert to torch tensor
-        screen = torch.from_numpy(convert_state_to_image(state=state,
-                                                         first_player=play_as_first_player,
-                                                         keep_player_colour=keep_player_colour)).to(device)
-        done = False
-        if render_env:
-            env.render(board=np.array(state).reshape((env.rows, env.columns, 1)),
-                       mode='rgb_image',
-                       render_waiting_time=1,
-                       keep_player_colour=keep_player_colour)
-        while not done:
-
-            # Get action
-            observation = {'board': list(state.ravel()), 'mark': 1 if env.first else 2}
-            action = policy.predict(observation,
-                                    configuration)
-
-            # Render the board as updated by the agent
-            if render_env:
-                # Create the board to render
-                render_state = state.copy()
-                ir = 0
-                for r in render_state:
-                    # Spot column to update
-                    if r[action] != [0]:
-                        break
-                    ir += 1
-                if ir - 1 >= 0:
-                    render_state[ir - 1, action] = [1] if play_as_first_player else [2]
-                env.render(board=render_state,
-                           mode='rgb_image',
-                           render_waiting_time=1,
-                           keep_player_colour=keep_player_colour)
-
-            # Update env
-            state, _, done, info = env.step(action)
-
-            if done:
-                if info['end_status'] == 'victory':
-                    print('\nThe trained agent won!\n')
-                elif info['end_status'] == 'lost':
-                    print('\nThe trained agent lost!\n')
-                elif info['end_status'] == 'invalid':
-                    print('\nThe trained agent performed an invalid action!\n')
-
-                if render_env:
-                    env.render(board=state,
-                               mode='rgb_image',
-                               render_waiting_time=1,
-                               keep_player_colour=keep_player_colour)
-                break
-
-            # Update results
-            action_recording[m] = torch.cat((action_recording[m], torch.Tensor([action])))
-            if len(state_recording[m]) == 0:
-                state_recording[m] = screen
-            else:
-                state_recording[m] = torch.cat((state_recording[m], screen), dim=0)
-
-            # Update screen for next iteration
+            # Change first or second player
+            if not play_as_first_player and env.opponent is interactive_player:
+                print('\n - Game is on ... Press any button -')
+            env.set_first(play_as_first_player)
+            # Initialize the environment and state# Initialize the environment and state
+            if not play_as_first_player and env.opponent is interactive_player:
+                print('\n - Table is empty, make your first move! -')
+            state = env.reset()
+            # Get image and convert to torch tensor
             screen = torch.from_numpy(convert_state_to_image(state=state,
                                                              first_player=play_as_first_player,
                                                              keep_player_colour=keep_player_colour)).to(device)
+            done = False
+            if render_env:
+                env.render(board=np.array(state).reshape((env.rows, env.columns, 1)),
+                           mode='rgb_image',
+                           render_waiting_time=1,
+                           keep_player_colour=keep_player_colour)
+            while not done:
 
-        if interactive_progress:
-            input('\n - Game finished! -')
-    return state_recording, action_recording
+                # Get action
+                observation = {'board': list(state.ravel()), 'mark': 1 if env.first else 2}
+                action = policy.predict(observation,
+                                        configuration)
+
+                # Render the board as updated by the agent
+                if render_env:
+                    # Create the board to render
+                    render_state = state.copy()
+                    ir = 0
+                    for r in render_state:
+                        # Spot column to update
+                        if r[action] != [0]:
+                            break
+                        ir += 1
+                    if ir - 1 >= 0:
+                        render_state[ir - 1, action] = [1] if play_as_first_player else [2]
+                    env.render(board=render_state,
+                               mode='rgb_image',
+                               render_waiting_time=1,
+                               keep_player_colour=keep_player_colour)
+
+                # Update env
+                state, _, done, info = env.step(action)
+
+                # Update results
+                action_recording[m] = torch.cat((action_recording[m], torch.Tensor([action])))
+                if len(state_recording[m]) == 0:
+                    state_recording[m] = screen
+                else:
+                    state_recording[m] = torch.cat((state_recording[m], screen), dim=0)
+
+                if done:
+                    if interactive_progress:
+                        if info['end_status'] == 'victory':
+                            print('\nThe trained agent won!\n')
+                        elif info['end_status'] == 'lost':
+                            print('\nThe trained agent lost!\n')
+                        elif info['end_status'] == 'invalid':
+                            print('\nThe trained agent performed an invalid action!\n')
+
+                    if render_env:
+                        env.render(board=state,
+                                   mode='rgb_image',
+                                   render_waiting_time=1,
+                                   keep_player_colour=keep_player_colour)
+                    break
+
+                # Update screen for next iteration
+                screen = torch.from_numpy(convert_state_to_image(state=state,
+                                                                 first_player=play_as_first_player,
+                                                                 keep_player_colour=keep_player_colour)).to(device)
+
+            if interactive_progress:
+                input('\n - Game finished! -')
+        return state_recording, action_recording
 
 
 def show_recordings(state_recording: torch.Tensor,
