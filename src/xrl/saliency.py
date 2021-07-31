@@ -182,17 +182,25 @@ class LIME_wrapper(nn.Module):
         # 'felzenszwalb': Edges are considered in increasing order of weight; their endpoint pixels are merged into a
         # region if this doesn't cause a cycle in the graph and if the pixels are similar to the existing regions pixels
 
+        # compactness balances color proximity and space proximity. Higher values give more weight to space proximity,
+        # making superpixel shapes more square/cubic.
         self.segmentation_fn = SegmentationAlgorithm('slic',
-                                                     kernel_size=(3, 3),
                                                      start_label=1,
-                                                     compactness=0.01,
+                                                     compactness=0.001,
                                                      min_size_factor=0,
                                                      n_segments=20,
                                                      random_seed=42)
         self.net = policy_network
         self.net.eval()
 
-    def forward(self, x):
+    def forward(self, x: np.array) -> np.array:
+        """
+        For LIME np.array are passed and returned compared to the classic forward because the library method
+        requires this format.
+
+        :param x: the game board screen image
+        :return: The probability of actions
+        """
         x = torch.tensor(x, dtype=torch.float32)
         # If only 3 dims the batch is created adding one
         if len(x.shape) == 3:
@@ -222,19 +230,15 @@ class LIME_wrapper(nn.Module):
                                                       segmentation_fn=self.segmentation_fn,
                                                       top_labels=7,
                                                       num_samples=100)
+
+        # num_features is the number of superpixels to include in explanation. It is set to 3 because
+        # the choice of an action depends on patterns of 3 pixels (in order to win or in order to avoid the victory
+        # of the opponent)
         temp, mask = explanation.get_image_and_mask(explanation.top_labels[0],
                                                     positive_only=False,
                                                     num_features=3,
                                                     hide_rest=False)
-        """
-        img_boundry1 = mark_boundaries(temp, mask)
-        plt.imshow(temp)
-        plt.show()
-        plt.imshow(mask)
-        plt.show()
-        plt.imshow(img_boundry1)
-        plt.show()
-        """
+
         return action, mask
 
 
