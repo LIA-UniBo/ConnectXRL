@@ -128,19 +128,19 @@ def get_win_percentages(player: Union[str, Callable],
 
 
 def record_matches(env: ConnectXGymEnv,
-                   policy: Policy,
+                   policy: Union[Policy, Callable],
                    configuration: dict = None,
                    play_as_first_player: bool = True,
                    num_matches: int = 1,
                    render_env: bool = True,
                    interactive_progress: bool = True,
                    keep_player_colour: bool = True,
-                   device: str = 'cpu') -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+                   device: str = 'cpu') -> Tuple[List[torch.Tensor], List[torch.Tensor], List[str]]:
     """
     Record screens and actions performed.
 
     :param env: the gym environment defining the board size and opponent, used only for testing here
-    :param policy: the policy of the agent as a nn.Module implementing predict method
+    :param policy: the policy of the agent as a nn.Module implementing predict method or as a generic callable
     :param configuration: game and agent config, default is {'columns': 7, 'rows': 6, 'inarow': 4, 'c_type': None}
     :param play_as_first_player: if True the agent is the first player
     :param num_matches: the number of matches
@@ -151,7 +151,7 @@ def record_matches(env: ConnectXGymEnv,
     :param device: the device where the recording occurs, 'cpu', 'gpu' ...
 
     :return: two list of length num_matches where the first contains the states observed and the second the associate
-    actions performed
+    actions performed and a list of strings representing the end status of each match
     """
 
     with torch.no_grad():
@@ -161,6 +161,7 @@ def record_matches(env: ConnectXGymEnv,
         # Results
         action_recording = [torch.Tensor([]) for _ in range(num_matches)]
         state_recording = [torch.Tensor([]) for _ in range(num_matches)]
+        results_recording = []
 
         for m in range(num_matches) if interactive_progress else tqdm(range(num_matches)):
             if interactive_progress:
@@ -188,8 +189,15 @@ def record_matches(env: ConnectXGymEnv,
 
                 # Get action
                 observation = {'board': list(state.ravel()), 'mark': 1 if env.first else 2}
-                action = policy.predict(observation,
-                                        configuration)
+
+                if isinstance(policy, Policy):
+                    action = policy.predict(observation,
+                                            configuration)
+                elif callable(policy):
+                    action = policy(observation,
+                                    configuration)
+                else:
+                    raise ValueError('Type of policy not supported, policy must be either a Policy or a Callable.')
 
                 # Render the board as updated by the agent
                 if render_env:
@@ -219,6 +227,9 @@ def record_matches(env: ConnectXGymEnv,
                     state_recording[m] = torch.cat((state_recording[m], screen), dim=0)
 
                 if done:
+                    # Update results
+                    results_recording.append(info['end_status'])
+
                     if interactive_progress:
                         if info['end_status'] == 'victory':
                             print('\nThe trained agent won!\n')
@@ -241,7 +252,7 @@ def record_matches(env: ConnectXGymEnv,
 
             if interactive_progress:
                 input('\n - Game finished! -')
-        return state_recording, action_recording
+        return state_recording, action_recording, results_recording
 
 
 def show_recordings(state_recording: torch.Tensor,

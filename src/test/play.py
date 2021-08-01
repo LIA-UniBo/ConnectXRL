@@ -47,10 +47,10 @@ def main():
     device = 'cpu'
     base_path = os.path.abspath(os.path.dirname(__file__))
     if constraint_type == 6:
-        weight_path = base_path + '/../../models/curriculum.pt'
+        weight_path = base_path + '/models/curriculum.pt'
         c_type = ConstraintType(5)
     else:
-        weight_path = base_path + '/../../models/' + (
+        weight_path = base_path + '/models/' + (
             ConstraintType(constraint_type).name if 6 > constraint_type > 0 else 'dqn').lower() + '.pt'
         c_type = ConstraintType(constraint_type) if constraint_type > 0 else None
 
@@ -61,16 +61,16 @@ def main():
               'inarow': 4,
               'c_type': c_type}
 
-    state_recording, action_recording = record_matches(env,
-                                                       agent,
-                                                       config,
-                                                       play_as_first_player=play_as_first_player,
-                                                       num_matches=num_matches,
-                                                       render_env=True,
-                                                       keep_player_colour=True)
+    state_recording, action_recording, results_recording = record_matches(env,
+                                                                          agent,
+                                                                          config,
+                                                                          play_as_first_player=play_as_first_player,
+                                                                          num_matches=num_matches,
+                                                                          render_env=True,
+                                                                          keep_player_colour=True)
 
     for i, (sr, ar) in enumerate(zip(state_recording, action_recording)):
-        print(f'Play recording {i + 1}')
+        print(f'Play recording {i + 1} (ended as {results_recording[-1]})')
         show_recordings(sr, ar)
 
 
