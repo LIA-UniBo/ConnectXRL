@@ -4,7 +4,7 @@ import torch
 from torch import Tensor
 
 from src.connectx.environment import ConnectXGymEnv, convert_state_to_image
-from src.connectx.evaluate import record_matches, show_recordings
+from src.connectx.evaluate import record_matches
 from src.connectx.opponents import interactive_player, random_player, always_one_position_player
 from src.connectx.policy import CNNPolicy, Policy
 from src.xrl.shapley import explain
@@ -60,9 +60,9 @@ def main():
     weight_path = './models/curriculum.pt'
     agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
+    # Create recordings for background images
     background_images = []
 
-    # Create recordings for background images
     if input('Use recording as background images for the DeepExplainer (y/n)') == 'y':
         recordings_combinations = [
             {'agent': random_player,
@@ -114,24 +114,28 @@ def main():
                         background_images=background_images,
                         explain_images=None)
 
+    # Explain matches
     is_continue = True
     while is_continue:
-        opponent = int(input('1 to play against random\n2 to play against negamax\nany button to play against the '
-                             'interactive player'))
+        explainer_type = input('1 to use DeepExplainer, any button to use GradientExplainer')
+        layer_to_explain = input('Layer to explain, if a number is not specified the input is considered')
+        opponent = int(input('1 to play against random, 2 to play against negamax or another number to play against the'
+                             ' interactive player'))
 
         test_states_recording, test_results_recording = create_recordings(
             agent,
-            'random' if opponent == 1 else ('negamax' if opponent == 2 else '3'),
+            'random' if opponent == 1 else ('negamax' if opponent == 2 else interactive_player),
             input('Play as first player (y/n)') == 'y',
             1
         )
-
         print(f'The match ended with {test_results_recording[0]} status')
 
         _ = explain(agent,
                     background_images=None,
                     explain_images=test_states_recording,
-                    explainer=explainer)
+                    explainer=explainer,
+                    explainer_type='deep' if type(explainer_type) is int and int(explainer_type) == 1 else 'gradient',
+                    layer_to_explain=(layer_to_explain - 1) if type(layer_to_explain) is int else None)
 
         is_continue = input('Continue (y/n)').lower() == 'y'
 

@@ -57,6 +57,8 @@ the target.
 def explain(policy: Policy,
             background_images: Optional[List[Tensor]],
             explain_images: Optional[List[Tensor]],
+            explainer_type: str = 'deep',
+            layer_to_explain: Optional[int] = None,
             explainer: Optional[Explainer] = None) -> Explainer:
     """
 
@@ -65,6 +67,10 @@ def explain(policy: Policy,
     background images for the explainer. If not passed only the test is performed.
     :param explain_images: a list with with tensors containing the sequence of states seen in each match used to
     test the explainer. If not passed only creation of the explainer is performed.
+    :param explainer_type: the type of the explainer to create, 'deep' for DeepExplainer, 'gradient' for
+    GradientExplainer
+    :param layer_to_explain: if specified it generates explanations for a specific convolutional layer of the
+    feature_extractor inside the policy. It is the index of a Sequential block called feature_extractor in the policy
     :param explainer: an already prepared SHAP explainer. If train is not passed this must be passed.
     :return: the shapley values associated to each action for each state seen in the matches
     """
@@ -80,15 +86,23 @@ def explain(policy: Policy,
 
     # Create explainer
     if background_images is not None:
-        explainer = shap.DeepExplainer(policy, background_images)
+        if explainer_type == 'deep':
+            explainer = shap.DeepExplainer(
+                policy if layer_to_explain is None else (policy, policy.feature_extractor[layer_to_explain]),
+                background_images
+            )
+        elif explainer_type == 'gradient':
+            explainer = shap.GradientExplainer(
+                policy if layer_to_explain is None else (policy, policy.feature_extractor[layer_to_explain]),
+                background_images
+            )
+        else:
+            raise ValueError('explainer_type can either be "deep" or "gradient".')
 
     if explain_images is not None:
         # Get a list with the length of possible actions, containing the shapley values as Numpy arrays for each
         # encountered state.
         shap_values = explainer.shap_values(explain_images)
-
-        # The Numpy arrays are transformed to PyTorch's tensors.
-        # shap_values = list(map(lambda x: torch.from_numpy(x), shap_values))
 
         shap.image_plot([sv.transpose([0, 2, 3, 1]) for sv in shap_values],
                         explain_images.data.numpy().transpose([0, 2, 3, 1]))
