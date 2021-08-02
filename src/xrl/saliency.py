@@ -239,7 +239,7 @@ class LIME_wrapper(nn.Module):
                                                     num_features=3,
                                                     hide_rest=False)
 
-        return action, mask
+        return action, torch.tensor(mask)
 
 
 def show_saliency_map(env: ConnectXGymEnv,
@@ -341,7 +341,10 @@ def show_saliency_map(env: ConnectXGymEnv,
                 action, saliency_map = extract_saliency_map()
             else:
                 _, saliency_map = extract_saliency_map()
-                action = policy(screen)
+                if saliency_type == 'lime':
+                    screen = np.array(torch.reshape(screen,
+                                                    (screen.shape[0], screen.shape[2], screen.shape[3], screen.shape[1])))
+                action = torch.tensor(policy(screen))
                 saliency_map.fill_(0)
 
             # Render the board as updated by the agent
