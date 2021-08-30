@@ -46,7 +46,7 @@ kernel to describe the locality which is an hyperparameter, if it is set to the 
 It is model agnostic and gives approximation because it does not compute every combination but it runs for a limited 
 time. The missing features are replaced from a background dataset. Choosing the background dataset is not easy.
 
-GradientExplainer: For neural network models-
+GradientExplainer: For neural network models
 
 
 SHAP pinpoints which features are most impactful for a each sample, providing a quantified impact on the same scale of 

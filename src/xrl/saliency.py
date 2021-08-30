@@ -340,8 +340,11 @@ def show_saliency_map(env: ConnectXGymEnv,
             if not see_saliency_on_input:
                 action, saliency_map = extract_saliency_map()
             else:
+                # Get the shape of the saliency map
                 _, saliency_map = extract_saliency_map()
+                # Compute action separately because is needed
                 action = policy(screen)
+                # Put saliency to 0 because is not used
                 saliency_map.fill_(0)
 
             # Render the board as updated by the agent

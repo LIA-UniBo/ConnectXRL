@@ -13,7 +13,8 @@ from src.xrl.shapley import explain
 def create_recordings(agent: Union[Policy, Callable],
                       opponent: Union[str, Callable],
                       play_as_first_player: bool,
-                      matches: int) -> Tuple[List[Tensor], List[str]]:
+                      matches: int,
+                      render_env: bool = False) -> Tuple[List[Tensor], List[str]]:
 
     """
 
@@ -21,6 +22,7 @@ def create_recordings(agent: Union[Policy, Callable],
     :param opponent: the opponent
     :param play_as_first_player: if True it plays as first
     :param matches: number of matches to record
+    :param render_env: if True it renders the environment
     :return: the recorded screen states and the final status
     """
 
@@ -33,7 +35,7 @@ def create_recordings(agent: Union[Policy, Callable],
                                                                             agent,
                                                                             play_as_first_player=play_as_first_player,
                                                                             num_matches=matches,
-                                                                            render_env=False,
+                                                                            render_env=render_env,
                                                                             interactive_progress=False,
                                                                             keep_player_colour=True)
 
@@ -57,13 +59,13 @@ def main():
                       screen_shape)
 
     device = 'cpu'
-    weight_path = './models/curriculum.pt'
+    weight_path = './models/sbr.pt'
     agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
     # Create recordings for background images
     background_images = []
 
-    if input('Use recording as background images for the DeepExplainer (y/n)') == 'y':
+    if input('Use recording as background images for the Explainer (y/n)') == 'y':
         recordings_combinations = [
             {'agent': random_player,
              'opponent': 'random',
@@ -106,7 +108,7 @@ def main():
         background_images = [s_tensor for sr_sublist in background_images for s_tensor in sr_sublist]
 
     # White images
-    empty_boards = int(input('Number of empty boards to add in the background dataset for the DeepExplainer'))
+    empty_boards = int(input('Number of empty boards to add in the background dataset for the Explainer'))
     background_images += [torch.clone(torch.from_numpy(init_screen)) for _ in range(empty_boards)]
 
     # Create explainer
@@ -126,7 +128,8 @@ def main():
             agent,
             'random' if opponent == 1 else ('negamax' if opponent == 2 else interactive_player),
             input('Play as first player (y/n)') == 'y',
-            1
+            1,
+            render_env=True
         )
         print(f'The match ended with {test_results_recording[0]} status')
 
