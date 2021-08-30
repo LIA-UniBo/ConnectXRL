@@ -151,7 +151,8 @@ def vanilla_saliency_map(screen: np.array,
     # print("max_grad:", torch.max(saliency_map))
     # print("min_grad:", torch.min(saliency_map))
 
-    return action, (saliency_map - torch.min(saliency_map)) / (torch.max(saliency_map) - torch.min(saliency_map)).data.numpy()
+    return action, \
+           (saliency_map - torch.min(saliency_map)) / (torch.max(saliency_map) - torch.min(saliency_map)).data.numpy()
 
 
 class LIME_wrapper(nn.Module):
@@ -239,7 +240,7 @@ class LIME_wrapper(nn.Module):
                                                     num_features=3,
                                                     hide_rest=False)
 
-        return action, mask
+        return action, torch.tensor(mask)
 
 
 def show_saliency_map(env: ConnectXGymEnv,
@@ -254,7 +255,7 @@ def show_saliency_map(env: ConnectXGymEnv,
 
     :param env: Gym environment
     :param policy: policy (network)
-    :param saliency_type: type of saliency ('vanilla', 'cam')
+    :param saliency_type: type of saliency ('vanilla', 'cam', 'lime')
     :param see_saliency_on_input: if True the saliency map is applied to the input that the policy actually see,
     otherwise it is applied to the resulting image resulting from the choice of the action (relative to the saliency
     map) from the policy. If True the saliency is removed when the enemy is playing, to get the best from this option
@@ -342,8 +343,17 @@ def show_saliency_map(env: ConnectXGymEnv,
             else:
                 # Get the shape of the saliency map
                 _, saliency_map = extract_saliency_map()
+
                 # Compute action separately because is needed
-                action = policy(screen)
+                if saliency_type == 'lime':
+                    screen = np.array(torch.reshape(
+                        screen,
+                        (screen.shape[0], screen.shape[2], screen.shape[3], screen.shape[1]))
+                    )
+                    action = torch.from_numpy(policy(screen))
+                else:
+                    action = policy(screen)
+
                 # Put saliency to 0 because is not used
                 saliency_map.fill_(0)
 

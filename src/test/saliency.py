@@ -30,15 +30,17 @@ def main():
     agent.load_state_dict(torch.load(weight_path, map_location=torch.device(device)))
 
     # Go
-    if opponent is interactive_player:
-        render_waiting_time = 0.001
-    else:
+    see_saliency_on_input = True
+
+    if see_saliency_on_input:
         render_waiting_time = 2
+    else:
+        render_waiting_time = 0.001
 
     show_saliency_map(env,
                       agent,
                       'lime',
-                      see_saliency_on_input=False,
+                      see_saliency_on_input=see_saliency_on_input,
                       num_episodes=30,
                       render_waiting_time=render_waiting_time,
                       device=device)
